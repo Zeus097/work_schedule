@@ -1,4 +1,4 @@
-# work_schedule
+# Work schedule
 
 <img width="463" height="185" alt="Screenshot 2025-12-06 at 14 29 03" src="https://github.com/user-attachments/assets/95486ff4-55fe-4fe2-853d-0e56aff18970" />
  
