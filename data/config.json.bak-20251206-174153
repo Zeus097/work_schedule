@@ -1,0 +1,38 @@
+{
+    "employees": [
+      {
+        "name": "Служител 1",
+        "start_date": "2025-01-01",
+        "last_shift": null
+      },
+      {
+        "name": "Служител 2",
+        "start_date": "2025-01-01",
+        "last_shift": null
+      },
+      {
+        "name": "Служител 3",
+        "start_date": "2025-01-01",
+        "last_shift": null
+      },
+      {
+        "name": "Служител 4",
+        "start_date": "2025-01-01",
+        "last_shift": null
+      }
+    ],
+
+    "admin": {
+      "name": "Администратор",
+      "start_date": "2025-01-01"
+    },
+
+    "settings": {
+      "shifts_per_month": 4,
+      "rotation_rules": {
+        "after_N": ["rest", "rest"],
+        "after_V": ["rest", "D"],
+        "after_D": ["rest", "N"]
+      }
+    }
+}
