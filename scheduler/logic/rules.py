@@ -16,7 +16,9 @@ TO_CYR = {
     "REST": "",  # REST – rest day (empty in UI)
 }
 
-TO_LAT = {v: k for k, v in TO_CYR.items() if v != ""}
+TO_LAT = {
+    v: k for k, v in TO_CYR.items() if v != ""
+}
 
 TO_LAT[""] = "REST"
 TO_LAT[" "] = "REST"
@@ -93,12 +95,7 @@ def get_preferred_next_shift(prev_shift):
     return get_transition_rule(prev_shift).default_next
 
 
-def is_shift_allowed(
-    prev_shift: Optional[str],
-    days_since_last_work: int,
-    new_shift: Optional[str],
-    crisis_mode: bool = False,
-) -> bool:
+def is_shift_allowed(prev_shift, days_since_last_work, new_shift, crisis_mode) -> bool:
 
     if is_rest_like(new_shift):
         return True
