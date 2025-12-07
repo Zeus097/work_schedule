@@ -62,6 +62,24 @@ def generate_new_month(year, month) -> Dict[str, Dict[int, str]]:
 
     weekdays = {day: calendar.weekday(year, month, day) for day in range(1, num_days + 1)}
 
+
+    admin_name = config["admin"]["name"]
+    is_workday = {}
+    for day in range(1, num_days + 1):
+        wd = weekdays[day]
+        if wd < 5 and day not in holidays:
+            is_workday[day] = True
+        else:
+            is_workday[day] = False
+
+    for day in range(1, num_days + 1):
+        if is_workday[day]:
+            schedule[admin_name][day] = "А"
+            employee_states[admin_name].total_workdays += 1
+        else:
+            schedule[admin_name][day] = ""
+
+
     return schedule
 
 
