@@ -127,6 +127,24 @@ def prepare_employee_states(config, last_month_data) -> Dict[str, EmployeeState]
                     states[emp_name].last_shift = shift_lat
                     states[emp_name].last_day = day
 
+
+    # (days_since_last_work)
+    for emp in states.values():
+        if emp.last_day is None:
+            emp.days_since = 999
+        else:
+            emp.days_since = 1
+
+
+    # the perfect next shift
+    for emp in states.values():
+        if emp.last_shift:
+            emp.next_shift_ideal = get_preferred_next_shift(emp.last_shift)
+        else:
+            emp.next_shift_ideal = None
+
+
+
     return states
 
 
