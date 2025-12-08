@@ -65,8 +65,8 @@ class ShiftTransitionRule:
 
 TRANSITION_RULES: Dict[str, ShiftTransitionRule] = {
     "N": ShiftTransitionRule(1, 2, "V"),
-    "V": ShiftTransitionRule(1, 1, "D"),
-    "D": ShiftTransitionRule(1, 1, "N"),
+    "V": ShiftTransitionRule(0, 0, "D"),
+    "D": ShiftTransitionRule(0, 0, "N"),
     "A": ShiftTransitionRule(0, 0, "A"),
     "O": ShiftTransitionRule(0, 0, None),
     "REST": ShiftTransitionRule(0, 0, None),
@@ -87,30 +87,28 @@ def get_preferred_next_shift(prev_shift):
 # Validation of allowed shift
 def is_shift_allowed(prev_shift, days_since_last_work, new_shift, crisis_mode) -> bool:
 
-    # rest / holiday always allowed
+    # Always allow REST
     if is_rest_like(new_shift):
         return True
 
-    # cannot work two consecutive real days
-    if days_since_last_work == 0 and is_working_shift(prev_shift) and is_working_shift(new_shift):
-        return False
-
-    # new employee
+    # New employee → allow any start shift
     if prev_shift is None:
         return True
 
+    # Forbidden: Evening → Night (double shift)
+    if prev_shift == "V" and new_shift == "N":
+        return False
+
     rule = get_transition_rule(prev_shift)
 
+    # Determine required rest days based on rules
     required_rest = rule.preferred_rest_days
     if crisis_mode:
         required_rest = rule.min_rest_days
 
-    # not enough rest
-    if days_since_last_work < required_rest and is_real_shift(new_shift):
-        return False
-
-    # absolute rule: need at least 1 day rest before D/V/N
-    if days_since_last_work < 1 and is_real_shift(new_shift):
-        return False
+    # Apply rest requirement only for rules that need it (mostly N → ...)
+    if is_real_shift(new_shift):
+        if days_since_last_work < required_rest:
+            return False
 
     return True
