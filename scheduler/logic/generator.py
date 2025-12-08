@@ -35,33 +35,31 @@ class EmployeeState:
 
 
 def generate_new_month(year, month) -> Dict[str, Dict[int, str]]:
-    """
-    Generates the new month schedule.
-    """
-
     config = load_config()
 
-    # Load last month, if it exists...
     latest = get_latest_month()
     last_month_data = latest[2] if latest else None
 
-
-    # Create empty schedule for the new month
     _, num_days = calendar.monthrange(year, month)
 
     schedule: Dict[str, Dict[int, str]] = {
-        emp["name"]: {day: "" for day in range(1, num_days + 1)} for emp in config["employees"]
+        emp["name"]: {day: "" for day in range(1, num_days + 1)}
+        for emp in config["employees"]
     }
 
     schedule[config["admin"]["name"]] = {day: "" for day in range(1, num_days + 1)}
 
     employee_states = prepare_employee_states(config, last_month_data)
 
-    # --- 4) Зареждаме празници (ще правим API следващата стъпка)
-    holidays = set()  # TODO: да се попълни чрез API
+    ideal_for_day = {
+        day: {"D": None, "V": None, "N": None}
+        for day in range(1, num_days + 1)
+    }
 
-    weekdays = {day: calendar.weekday(year, month, day) for day in range(1, num_days + 1)}
+    holidays = set()
 
+    weekdays = {day: calendar.weekday(year, month, day)
+                for day in range(1, num_days + 1)}
 
     admin_name = config["admin"]["name"]
     is_workday = {}
@@ -79,8 +77,17 @@ def generate_new_month(year, month) -> Dict[str, Dict[int, str]]:
         else:
             schedule[admin_name][day] = ""
 
+    for day in range(1, num_days + 1):
+        ideal_for_day[day]["D"] = choose_ideal_employee(employee_states, "D")
+        ideal_for_day[day]["V"] = choose_ideal_employee(employee_states, "V")
+        ideal_for_day[day]["N"] = choose_ideal_employee(employee_states, "N")
 
-    return schedule
+    return {
+        "schedule": schedule,
+        "ideal": ideal_for_day,
+        "states": {name: vars(st) for name, st in employee_states.items()},
+    }
+
 
 
 def prepare_employee_states(config, last_month_data) -> Dict[str, EmployeeState]:
@@ -148,3 +155,29 @@ def prepare_employee_states(config, last_month_data) -> Dict[str, EmployeeState]
     return states
 
 
+def choose_ideal_employee(employees, shift_code):
+    """
+    Chooses best employee for current shift according to:
+        - идеална ротация
+        - дни почивка
+        - баланс на работа
+    """
+    candidates = []
+
+    for emp in employees.values():
+        if emp.last_shift == "A":
+            continue
+
+        ideal_match = 1 if emp.next_shift_ideal == shift_code else 0
+
+        candidates.append((
+            ideal_match,          # 1 = perfect rotation
+            emp.days_since,       # more rest days --> better
+            -emp.total_workdays,  # less work = better
+            emp.name              # for stability
+        ))
+
+    # Starts by priority
+    candidates.sort(reverse=True)
+
+    return candidates[0][3] if candidates else None
