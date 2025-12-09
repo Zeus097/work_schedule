@@ -1,28 +1,23 @@
 {
   "employees": [
     {
-      "name": "Служител 1",
+      "name": "Емре Адемов Ибрямов",
       "start_date": "2025-01-01",
       "last_shift": null
     },
     {
-      "name": "Служител 2",
+      "name": "Къймет Хюсеинова Местанова",
       "start_date": "2025-01-01",
       "last_shift": null
     },
     {
-      "name": "Служител 3",
-      "start_date": "2025-01-01",
-      "last_shift": null
-    },
-    {
-      "name": "Служител 4",
+      "name": "Йорданка Стоянова Панайотова",
       "start_date": "2025-01-01",
       "last_shift": null
     }
   ],
   "admin": {
-    "name": "Администратор",
+    "name": "Васил Димитров Димитров",
     "start_date": "2025-01-01"
   },
   "settings": {
@@ -41,8 +36,5 @@
         "N"
       ]
     }
-  },
-  "test_key": "OK"
+  }
 }
-
-
