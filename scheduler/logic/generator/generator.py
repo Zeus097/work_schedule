@@ -11,6 +11,14 @@ from scheduler.logic.generator.limits import choose_employee_for_shift
 from scheduler.logic.generator.apply_shift import apply_shift
 
 
+from scheduler.logic.generator.overrides import (
+    index_overrides,
+    get_override,
+    WORKING_CODES,
+    NON_WORKING_CODES,
+)
+
+
 SOFT_WORKDAYS_DEVIATION = 1
 HARD_WORKDAYS_DEVIATION = 2
 
@@ -19,10 +27,7 @@ HARD_WORKDAYS_DEVIATION = 2
 # MAIN GENERATOR
 # ======================================
 
-def generate_new_month(year, month):
-    # -----------------------------
-    # Load config and previous month state
-    # -----------------------------
+def generate_new_month(year, month, overrides=None):
     config = load_config()
 
     latest = get_latest_month()
@@ -30,9 +35,6 @@ def generate_new_month(year, month):
 
     _, num_days = calendar.monthrange(year, month)
 
-    # -----------------------------
-    # Initialize output schedule
-    # -----------------------------
     schedule = {
         emp["name"]: {day: "" for day in range(1, num_days + 1)}
         for emp in config["employees"]
@@ -41,9 +43,8 @@ def generate_new_month(year, month):
     admin_name = config["admin"]["name"]
     schedule[admin_name] = {day: "" for day in range(1, num_days + 1)}
 
-    # -----------------------------
-    # Load employee states
-    # -----------------------------
+    override_index = index_overrides(overrides or [])
+
     employee_states = prepare_employee_states(config, last_month_data)
 
     # -----------------------------
@@ -70,11 +71,9 @@ def generate_new_month(year, month):
         st_admin = employee_states[admin_name]
 
         if wd < 5 and day not in holidays:
-            # Workday → Admin works
             schedule[admin_name][day] = "А"
             apply_shift(st_admin, "A", is_workday=True)
         else:
-            # Weekend/holiday → Admin rests
             schedule[admin_name][day] = ""
             apply_shift(st_admin, "REST", is_workday=False)
 
@@ -83,13 +82,50 @@ def generate_new_month(year, month):
         for day in range(1, num_days + 1)
     }
 
-    # -----------------------------
-    # MAIN LOOP — ASSIGN SHIFTS
-    # -----------------------------
+    # =======================================================
+    # MAIN LOOP — APPLY OVERRIDES FIRST, THEN GENERATE SHIFTS
+    # =======================================================
     for day in range(1, num_days + 1):
+
         used_today = set()
         wd = weekdays[day]
         is_workday = wd < 5 and day not in holidays
+
+        # ============================================
+        # STEP 1 — APPLY MANUAL OVERRIDES FOR THIS DAY
+        # ============================================
+        for name, st in employee_states.items():
+            if name == admin_name:
+                continue
+
+            ov = get_override(override_index, day, name)
+            if not ov:
+                continue
+
+
+            if ov.shift_code in WORKING_CODES:
+                translated = {"D": "Д", "V": "В", "N": "Н"}[ov.shift_code]
+                schedule[name][day] = translated
+                apply_shift(st, ov.shift_code, is_workday=True)
+                used_today.add(name)
+                continue
+
+            if ov.shift_code in NON_WORKING_CODES:
+                schedule[name][day] = "П"   # visual symbol (adjust if needed)
+                apply_shift(st, "REST", is_workday=False)
+                used_today.add(name)
+                continue
+
+        # ====================================================
+        # STEP 2 – NORMAL SHIFT ASSIGNMENT FOR REMAINING CELLS
+        # ====================================================
+        # First, list employees blocked by overrides (cannot be assigned)
+        blocked = set()
+        for name in employee_states:
+            if name == admin_name:
+                continue
+            if get_override(override_index, day, name):
+                blocked.add(name)
 
         for shift_code, cyr in (("D", "Д"), ("V", "В"), ("N", "Н")):
 
@@ -97,10 +133,12 @@ def generate_new_month(year, month):
                 states=employee_states,
                 shift_code=shift_code,
                 admin_name=admin_name,
-                used_today=used_today,
+                used_today=used_today.union(blocked),
                 crisis_mode=False,
-                soft_min=soft_min, soft_max=soft_max,
-                hard_min=hard_min, hard_max=hard_max
+                soft_min=soft_min,
+                soft_max=soft_max,
+                hard_min=hard_min,
+                hard_max=hard_max
             )
 
             # If no employee found → try crisis mode
@@ -109,10 +147,12 @@ def generate_new_month(year, month):
                     states=employee_states,
                     shift_code=shift_code,
                     admin_name=admin_name,
-                    used_today=used_today,
+                    used_today=used_today.union(blocked),
                     crisis_mode=True,
-                    soft_min=soft_min, soft_max=soft_max,
-                    hard_min=hard_min, hard_max=hard_max
+                    soft_min=soft_min,
+                    soft_max=soft_max,
+                    hard_min=hard_min,
+                    hard_max=hard_max
                 )
 
             ideal_for_day[day][shift_code] = emp
@@ -122,12 +162,14 @@ def generate_new_month(year, month):
                 used_today.add(emp)
                 apply_shift(employee_states[emp], shift_code, is_workday)
 
+        # Increment days_since for employees without a shift
         for name, st in employee_states.items():
             if name == admin_name:
                 continue
             if schedule[name][day] not in ("Д", "В", "Н"):
                 st.days_since += 1
 
+    # Return structure
     return {
         "schedule": schedule,
         "ideal": ideal_for_day,
