@@ -21,7 +21,7 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
 #  APPLICATIONS
 # ===============================
 PROJECT_APPS = [
-
+    "scheduler",
 ]
 
 INSTALLED_APPS = [
