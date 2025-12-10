@@ -5,8 +5,13 @@ from rest_framework import status
 from scheduler.models import MonthRecord
 from scheduler.logic.generator.generator import generate_new_month
 
-from scheduler.api.serializers import DayRecordSerializer, OverrideSerializer
 from scheduler.api.errors import api_error
+
+from scheduler.api.serializers import (
+    DayRecordSerializer,
+    OverrideSerializer,
+    GenerateMonthSerializer
+)
 
 
 class ScheduleView(APIView):
@@ -100,3 +105,37 @@ class ScheduleOverrideView(APIView):
         # 5) we bring back the renewed day
         output_serializer = DayRecordSerializer(record)
         return Response(output_serializer.data, status=status.HTTP_200_OK)
+
+
+
+
+
+class GenerateMonthView(APIView):
+    def post(self, request):
+        serializer = GenerateMonthSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_error(
+                code="INVALID_INPUT",
+                message="Невалидни параметри за генериране на месец.",
+                hint=str(serializer.errors)
+            )
+
+        data = serializer.validated_data
+        year = data['year']
+        month = data['month']
+
+
+        generate_new_month(year, month)
+
+
+        records = MonthRecord.objects.filter(year=year, month=month)
+        out = DayRecordSerializer(records, many=True)
+
+        return Response({
+            "year": year,
+            "month": month,
+            "generated": True,
+            "days": out.data
+        }, status=status.HTTP_201_CREATED)
+
+

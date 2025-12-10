@@ -22,3 +22,6 @@ class OverrideSerializer(serializers.Serializer):
     new_shift = serializers.CharField(max_length=5)   # 'Д', 'Н', 'В', 'П' и e.t.c.
 
 
+class GenerateMonthSerializer(serializers.Serializer):
+    year = serializers.IntegerField()
+    month = serializers.IntegerField(min_value=1, max_value=12)
