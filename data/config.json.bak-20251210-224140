@@ -1,0 +1,37 @@
+{
+  "employees": [
+    {
+      "name": "Васил Димитров"
+    },
+    {
+      "name": "Емре Адемов Ибрямов"
+    },
+    {
+      "name": "Йорданка Панайотова"
+    },
+    {
+      "name": "Къймет Местанова"
+    }
+  ],
+  "admin": {
+    "name": "Васил Димитров Димитров",
+    "start_date": "2025-01-01"
+  },
+  "settings": {
+    "shifts_per_month": 4,
+    "rotation_rules": {
+      "after_N": [
+        "rest",
+        "rest"
+      ],
+      "after_V": [
+        "rest",
+        "D"
+      ],
+      "after_D": [
+        "rest",
+        "N"
+      ]
+    }
+  }
+}

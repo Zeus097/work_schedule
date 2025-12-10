@@ -32,3 +32,7 @@ class EmployeeService:
         return filtered
 
 
+    @staticmethod
+    def get_all_employees():
+        return list(Employee.objects.filter(is_active=True).values_list("full_name", flat=True))
+
