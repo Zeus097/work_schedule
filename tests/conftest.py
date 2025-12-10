@@ -1,4 +1,8 @@
+import os
+import django
 import pytest
+
+
 
 @pytest.fixture
 def sample_config():
@@ -19,5 +23,9 @@ def sample_config():
 @pytest.fixture
 def empty_last_month():
     return None
+
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "weight_department_schedule.settings")
+django.setup()
 
 

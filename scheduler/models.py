@@ -60,3 +60,6 @@ class MonthRecord(models.Model):
 
         month_name = calendar.month_name[self.month]
         return f"{month_name} {self.year}"
+
+
+
