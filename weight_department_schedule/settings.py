@@ -128,3 +128,12 @@ MEDIA_ROOT = BASE_DIR / 'media'
 #  PRIMARY KEY TYPE
 # ===============================
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+#  FRAMEWORK
+# ===============================
+REST_FRAMEWORK = {
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+}

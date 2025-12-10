@@ -2,109 +2,50 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
-from scheduler.models import MonthRecord
+from scheduler.models import MonthRecord, Employee
 from scheduler.logic.generator.generator import generate_new_month
 
 from scheduler.api.errors import api_error
 
 from scheduler.api.serializers import (
-    DayRecordSerializer,
     OverrideSerializer,
-    GenerateMonthSerializer
+    GenerateMonthSerializer,
+    EmployeeSerializer,
+    EmployeeUpdateSerializer
 )
 
 
-class ScheduleView(APIView):
-    def get(self, request, year, month):
-
-        # Checking if the month exists
-        records = MonthRecord.objects.filter(year=year, month=month)
-
-        # If not – generate a new one
-        if not records.exists():
-            generated = generate_new_month(year, month)
-
-            # the generated returns dict
-            records = MonthRecord.objects.filter(year=year, month=month)
-
-        # serialization
-        serializer = DayRecordSerializer(records, many=True)
-        return Response({
-            "year": year,
-            "month": month,
-            "days": serializer.data
-        }, status=status.HTTP_200_OK)
-
-
-
-
-
 
 class ScheduleView(APIView):
     def get(self, request, year, month):
-        # Checking if the month exists
-        records = MonthRecord.objects.filter(year=year, month=month)
 
-        # If not – generate a new one
-        if not records.exists():
+        # check if month exists
+        try:
+            record = MonthRecord.objects.get(year=year, month=month)
+        except MonthRecord.DoesNotExist:
             generate_new_month(year, month)
-            records = MonthRecord.objects.filter(year=year, month=month)
+            record = MonthRecord.objects.get(year=year, month=month)
 
-        # serialization
-        serializer = DayRecordSerializer(records, many=True)
+        # return raw JSON data
         return Response({
             "year": year,
             "month": month,
-            "days": serializer.data
+            "data": record.data
         }, status=status.HTTP_200_OK)
+
+
+
+
 
 
 class ScheduleOverrideView(APIView):
     def post(self, request, year, month):
-
-        # 1) validate the input
-        input_serializer = OverrideSerializer(data=request.data)
-        if not input_serializer.is_valid():
-            return api_error(
-                code="INVALID_INPUT",
-                message="Подадените данни са невалидни.",
-                hint=str(input_serializer.errors)
-            )
-
-        data = input_serializer.validated_data
-
-        employee_id = data['employee_id']
-        day = data['day']
-        new_shift = data['new_shift']
-
-        # 2) we ensure that the month exists
-        if not MonthRecord.objects.filter(year=year, month=month).exists():
-            generate_new_month(year, month)
-
-        # 3) we find the specific record
-        try:
-            record = MonthRecord.objects.get(
-                year=year,
-                month=month,
-                day=day,
-                employee_id=employee_id,
-            )
-        except MonthRecord.DoesNotExist:
-            return api_error(
-                code="NOT_FOUND",
-                message="Няма запис за избрания служител в този ден.",
-                hint="Проверете дали служителят и денят са валидни.",
-                http_status=status.HTTP_404_NOT_FOUND
-            )
-
-        # 4) apply override
-        record.shift = new_shift
-        record.is_override = True
-        record.save()
-
-        # 5) we bring back the renewed day
-        output_serializer = DayRecordSerializer(record)
-        return Response(output_serializer.data, status=status.HTTP_200_OK)
+        return api_error(
+            code="NOT_SUPPORTED",
+            message="Override функционалността ще бъде активирана след обновяване на JSON структурата.",
+            hint="Очаква се във Фаза 2 – Стъпка 6.",
+            http_status=status.HTTP_400_BAD_REQUEST
+        )
 
 
 
@@ -124,18 +65,91 @@ class GenerateMonthView(APIView):
         year = data['year']
         month = data['month']
 
+        # Generate month (returns dict)
+        generated = generate_new_month(year, month)
 
-        generate_new_month(year, month)
-
-
-        records = MonthRecord.objects.filter(year=year, month=month)
-        out = DayRecordSerializer(records, many=True)
-
+        # Return the raw JSON
         return Response({
             "year": year,
             "month": month,
             "generated": True,
-            "days": out.data
+            "data": generated
         }, status=status.HTTP_201_CREATED)
+
+
+
+
+
+
+
+class EmployeeListCreateView(APIView):
+    def get(self, request):
+        employees = Employee.objects.all().order_by('full_name')
+        serializer = EmployeeSerializer(employees, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = EmployeeSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return api_error(
+                code="INVALID_INPUT",
+                message="Невалидни данни за създаване на служител.",
+                hint=str(serializer.errors)
+            )
+
+        employee = serializer.save()
+        return Response(EmployeeSerializer(employee).data, status=status.HTTP_201_CREATED)
+
+
+
+class EmployeeDetailView(APIView):
+    def put(self, request, id):
+        # lookup
+        try:
+            employee = Employee.objects.get(id=id)
+        except Employee.DoesNotExist:
+            return api_error(
+                code="NOT_FOUND",
+                message="Служителят не е намерен.",
+                hint="Проверете дали ID-то е валидно.",
+                http_status=status.HTTP_404_NOT_FOUND
+            )
+
+        # validation
+        serializer = EmployeeUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_error(
+                code="INVALID_INPUT",
+                message="Невалидни данни за редакция.",
+                hint=str(serializer.errors)
+            )
+
+        data = serializer.validated_data
+
+        # update only the provided fields
+        for field, value in data.items():
+            setattr(employee, field, value)
+
+        employee.save()
+
+        return Response(EmployeeSerializer(employee).data, status=status.HTTP_200_OK)
+
+    def delete(self, request, id):
+        # lookup
+        try:
+            employee = Employee.objects.get(id=id)
+        except Employee.DoesNotExist:
+            return api_error(
+                code="NOT_FOUND",
+                message="Служителят не е намерен.",
+                hint="Проверете ID-то.",
+                http_status=status.HTTP_404_NOT_FOUND
+            )
+
+        employee.delete()
+
+        return Response({"status": "deleted"}, status=status.HTTP_204_NO_CONTENT)
+
 
 
