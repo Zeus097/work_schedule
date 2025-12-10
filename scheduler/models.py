@@ -5,14 +5,16 @@ import calendar
 class Employee(models.Model):
     full_name = models.CharField(max_length=255, unique=True)
     start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)   # <-- ново
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["full_name"]
 
-    def __str__(self) -> str:
+    def __str__(self):
         return self.full_name
+
 
 
 class AdminEmployee(models.Model):
