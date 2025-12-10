@@ -1,6 +1,10 @@
 from django.core.management.base import BaseCommand, CommandError
 from scheduler.models import MonthRecord
 from scheduler.logic.generator.generator import generate_new_month
+from scheduler.services.employee_service import EmployeeService
+from scheduler.logic.json_help_functions import load_json_file, write_json_file
+
+
 
 
 class Command(BaseCommand):
@@ -20,6 +24,16 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.WARNING(f"👉 Генерирам {year}-{month:02d} ..."))
 
+        employees = EmployeeService.get_active_employees_for_month(year, month)
+
+        if not employees:
+            raise CommandError("Няма активни служители за този месец!")
+
+        config = load_json_file("config")
+
+        config["employees"] = [{"name": emp} for emp in employees]
+
+        write_json_file(config, "config")
 
         result = generate_new_month(year, month)
 

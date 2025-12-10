@@ -53,3 +53,15 @@ def _save_json_with_lock(path: Path, data: Dict[str, Any]) -> None:
     tmp_path.replace(path)
 
 
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+def load_json_file(name: str):
+    path = DATA_DIR / f"{name}.json"
+    return _load_json(path)
+
+
+def write_json_file(data, name: str):
+    path = DATA_DIR / f"{name}.json"
+    _save_json_with_lock(path, data)
+
+
