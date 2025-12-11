@@ -6,7 +6,6 @@ from .data_model import EmployeeState
 def prepare_employee_states(config, last_month_data) -> Dict[str, EmployeeState]:
     states: Dict[str, EmployeeState] = {}
 
-    # Normal employees
     for emp in config["employees"]:
         name = emp["name"]
         last_shift_raw = emp.get("last_shift")
@@ -22,7 +21,6 @@ def prepare_employee_states(config, last_month_data) -> Dict[str, EmployeeState]
             consecutive_same_shift=1 if last_shift in {"D", "V", "N"} else 0
         )
 
-    # Admin
     admin_name = config["admin"]["name"]
     states[admin_name] = EmployeeState(
         name=admin_name,
@@ -34,36 +32,48 @@ def prepare_employee_states(config, last_month_data) -> Dict[str, EmployeeState]
         consecutive_same_shift=1
     )
 
-    # Load real history from previous month
-    if last_month_data:
-        for emp_name, month_days in last_month_data["days"].items():
-            if emp_name not in states:
-                continue
 
-            last_cons = 0
-            last_shift = None
+    if not last_month_data or "days" not in last_month_data:
+        return states
 
-            for day in sorted(month_days):
-                shift_lat = to_lat(month_days[day])
 
-                if is_working_shift(shift_lat):
-                    last_shift = shift_lat
-                    states[emp_name].last_day = day
+    for emp_name, month_days in last_month_data["days"].items():
+        if emp_name not in states:
+            continue
 
-                    if shift_lat == last_shift:
-                        last_cons += 1
-                    else:
-                        last_cons = 1
+        last_cons = 0
+        last_shift = None
 
-            if last_shift:
-                states[emp_name].last_shift = last_shift
-                states[emp_name].consecutive_same_shift = last_cons
 
-    # If last day exists → days_since = 1
+        for day in sorted(month_days, key=lambda x: int(x)):
+            shift_lat = to_lat(month_days[day])
+
+            if is_working_shift(shift_lat):
+
+                if shift_lat == last_shift:
+                    last_cons += 1
+                else:
+                    last_cons = 1
+
+                last_shift = shift_lat
+                states[emp_name].last_day = int(day)
+
+
+        if last_shift:
+            st = states[emp_name]
+            st.last_shift = last_shift
+            st.consecutive_same_shift = last_cons
+
+
     for st in states.values():
         if st.last_day is not None:
             st.days_since = 1
 
     return states
+
+
+
+
+
 
 

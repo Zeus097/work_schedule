@@ -1,4 +1,5 @@
 import calendar
+import time
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QPushButton,
@@ -93,18 +94,35 @@ class MainWindow(QMainWindow):
         month_info = self.client.get_month_info(year, month)
         days_count = month_info.get("days", 31)
         holidays = month_info.get("holidays", [])
-
         days = list(range(1, days_count + 1))
 
         weekends = []
         for d in days:
-            wd = calendar.weekday(year, month, d)
-            if wd in (5, 6):
+            if calendar.weekday(year, month, d) in (5, 6):
                 weekends.append(d)
 
-        data = self.client.get_schedule(year, month)
-        schedule = data.get("schedule", {})
+        # --- Основно зареждане ---
+        try:
+            data = self.client.get_schedule(year, month)
 
+        except FileNotFoundError:
+            print(f"Месецът не съществува → генерираме: {year} {month}")
+            self.client.generate_month(year, month)
+
+            # !!! CRITICAL FIX → retry with delay !!!
+            time.sleep(0.1)  # 100ms да се създаде файла
+
+            # Retry до 5 пъти
+            for _ in range(5):
+                try:
+                    data = self.client.get_schedule(year, month)
+                    break
+                except FileNotFoundError:
+                    time.sleep(0.1)
+            else:
+                raise RuntimeError("Файлът не се появи след генериране!")
+
+        schedule = data.get("schedule", {})
         ordered_names = [emp["full_name"] for emp in self.employees]
 
         self.calendar = CalendarWidget()
@@ -117,7 +135,6 @@ class MainWindow(QMainWindow):
             weekends,
             holidays
         )
-
 
         self.scroll.setWidget(self.calendar)
 

@@ -7,20 +7,38 @@ class APIClient:
         self.base = API_BASE_URL
 
     def get_years(self):
-        return requests.get(f"{self.base}/meta/years/").json()
+        r = requests.get(f"{self.base}/meta/years/")
+        r.raise_for_status()
+        return r.json()
 
     def get_months(self, year: int):
-        return requests.get(f"{self.base}/meta/months/{year}/").json()
+        r = requests.get(f"{self.base}/meta/months/{year}/")
+        r.raise_for_status()
+        return r.json()
 
     def get_month_info(self, year: int, month: int):
-        return requests.get(f"{self.base}/meta/month-info/{year}/{month}/").json()
+        r = requests.get(f"{self.base}/meta/month-info/{year}/{month}/")
+        r.raise_for_status()
+        return r.json()
 
     def get_schedule(self, year: int, month: int):
         url = f"{self.base}/schedule/{year}/{month}/"
-        return requests.get(url).json()
+        r = requests.get(url)
+        if r.status_code == 404:
+            raise FileNotFoundError
+        r.raise_for_status()
+        return r.json()
+
+    def generate_month(self, year: int, month: int):
+        url = f"{self.base}/schedule/generate/"
+        r = requests.post(url, json={"year": year, "month": month})
+        r.raise_for_status()
+        return r.json()
 
     def get_employees(self):
-        return requests.get(f"{self.base}/employees/").json()
+        r = requests.get(f"{self.base}/employees/")
+        r.raise_for_status()
+        return r.json()
 
     def post_override(self, year, month, data):
         url = f"{self.base}/schedule/{year}/{month}/override/"

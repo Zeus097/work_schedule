@@ -72,7 +72,12 @@ class GenerateMonthView(APIView):
         year = data['year']
         month = data['month']
 
+
         generated = generate_new_month(year, month)
+
+
+        save_month(year, month, generated)
+
 
         return Response({
             "year": year,
@@ -80,6 +85,7 @@ class GenerateMonthView(APIView):
             "generated": True,
             "data": generated
         }, status=status.HTTP_201_CREATED)
+
 
 
 class EmployeeListCreateView(APIView):
