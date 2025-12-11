@@ -9,6 +9,9 @@ from PyQt6.QtGui import QAction, QMouseEvent
 class ClickableLabel(QLabel):
     clicked = pyqtSignal()
 
+    def set_shift(self, value: str):
+        self.setText(value)
+
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
@@ -89,6 +92,7 @@ class CalendarWidget(QWidget):
                 cell.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 cell.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
 
+
                 if day in self.holidays:
                     cell.setStyleSheet(
                         "background-color: #add8ff; border: 1px solid #6aa0d6; color: black;"
@@ -102,12 +106,15 @@ class CalendarWidget(QWidget):
                         "background-color: #3a3a3a; border: 1px solid #555; color: white;"
                     )
 
+                # click handler
                 cell.clicked.connect(
                     lambda _, d=day, e=emp: self.on_cell_click(d, e)
                 )
 
                 row_layout.addWidget(cell)
-                self.day_cells[(row_idx, col_idx)] = cell
+
+
+                self.day_cells[(emp, day)] = cell
 
             self.root_layout.addLayout(row_layout)
 
@@ -129,6 +136,16 @@ class CalendarWidget(QWidget):
             menu.addAction(action)
 
         menu.exec(self.mapToGlobal(self.cursor().pos()))
+
+
+    def apply_schedule(self, schedule: dict):
+        for employee, days in schedule.items():
+            for day_str, shift_code in days.items():
+                day = int(day_str)
+                cell = self.day_cells.get((employee, day))
+                if cell:
+                    cell.set_shift(shift_code)
+
 
 
 

@@ -80,10 +80,12 @@ class MainWindow(QMainWindow):
         container.setLayout(main_layout)
         self.setCentralWidget(container)
 
+
         self.month_select.currentIndexChanged.connect(self.reload_calendar)
         self.year_select.currentIndexChanged.connect(self.reload_calendar)
 
         self.reload_calendar()
+
 
     def reload_calendar(self):
         year = int(self.year_select.currentText())
@@ -96,23 +98,18 @@ class MainWindow(QMainWindow):
         holidays = month_info.get("holidays", [])
         days = list(range(1, days_count + 1))
 
-        weekends = []
-        for d in days:
-            if calendar.weekday(year, month, d) in (5, 6):
-                weekends.append(d)
+        weekends = [
+            d for d in days if calendar.weekday(year, month, d) in (5, 6)
+        ]
 
-        # --- Основно зареждане ---
+
         try:
             data = self.client.get_schedule(year, month)
-
         except FileNotFoundError:
             print(f"Месецът не съществува → генерираме: {year} {month}")
             self.client.generate_month(year, month)
 
-            # !!! CRITICAL FIX → retry with delay !!!
-            time.sleep(0.1)  # 100ms да се създаде файла
-
-            # Retry до 5 пъти
+            time.sleep(0.1)
             for _ in range(5):
                 try:
                     data = self.client.get_schedule(year, month)
@@ -125,6 +122,7 @@ class MainWindow(QMainWindow):
         schedule = data.get("schedule", {})
         ordered_names = [emp["full_name"] for emp in self.employees]
 
+
         self.calendar = CalendarWidget()
         self.calendar.cell_clicked.connect(self.on_override_requested)
 
@@ -135,6 +133,9 @@ class MainWindow(QMainWindow):
             weekends,
             holidays
         )
+
+
+        self.calendar.apply_schedule(schedule)
 
         self.scroll.setWidget(self.calendar)
 
@@ -152,7 +153,9 @@ class MainWindow(QMainWindow):
             "new_shift": new_shift
         })
 
+
         self.reload_calendar()
+
 
     def open_employees(self):
         dialog = QDialog(self)
