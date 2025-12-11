@@ -1,3 +1,5 @@
+import calendar
+
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QPushButton,
     QComboBox, QLabel, QGridLayout, QDialog, QScrollArea
@@ -28,10 +30,8 @@ class MainWindow(QMainWindow):
 
         self.build_ui()
 
-    # ---------------------------------------------------
     def build_ui(self):
         main_layout = QVBoxLayout()
-
         grid = QGridLayout()
 
         year_label = QLabel("Година:")
@@ -61,19 +61,16 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(grid)
 
-        # --- BIG SECTION TITLE (КАНТАР) ---
         self.section_title = QLabel("КАНТАР")
         self.section_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.section_title.setStyleSheet("font-size: 22px; font-weight: bold;")
         main_layout.addWidget(self.section_title)
 
-        # --- MONTH TITLE (Януари, Февруари...) ---
         self.month_title = QLabel("")
         self.month_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.month_title.setStyleSheet("font-size: 18px; font-weight: bold;")
         main_layout.addWidget(self.month_title)
 
-        # Scroll area за календара
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         main_layout.addWidget(self.scroll)
@@ -82,38 +79,48 @@ class MainWindow(QMainWindow):
         container.setLayout(main_layout)
         self.setCentralWidget(container)
 
-        # Automatic reload when changed
         self.month_select.currentIndexChanged.connect(self.reload_calendar)
         self.year_select.currentIndexChanged.connect(self.reload_calendar)
 
         self.reload_calendar()
 
-    # ---------------------------------------------------
     def reload_calendar(self):
         year = int(self.year_select.currentText())
         month = int(self.month_select.currentText())
 
-        # Refresh month name
         self.month_title.setText(MONTH_NAMES.get(month, ""))
+
+        month_info = self.client.get_month_info(year, month)
+        days_count = month_info.get("days", 31)
+        holidays = month_info.get("holidays", [])
+
+        days = list(range(1, days_count + 1))
+
+        weekends = []
+        for d in days:
+            wd = calendar.weekday(year, month, d)
+            if wd in (5, 6):
+                weekends.append(d)
 
         data = self.client.get_schedule(year, month)
         schedule = data.get("schedule", {})
 
         ordered_names = [emp["full_name"] for emp in self.employees]
 
-        schedule_data = {
-            "employees": ordered_names,
-            "days": list(range(1, 32)),
-            "schedule": schedule
-        }
-
         self.calendar = CalendarWidget()
         self.calendar.cell_clicked.connect(self.on_override_requested)
-        self.calendar.build(schedule_data)
+
+        self.calendar.setup(
+            ordered_names,
+            days,
+            schedule,
+            weekends,
+            holidays
+        )
+
 
         self.scroll.setWidget(self.calendar)
 
-    # ---------------------------------------------------
     def on_override_requested(self, day, payload):
         employee, new_shift = payload.split(":")
         if not new_shift:
@@ -130,7 +137,6 @@ class MainWindow(QMainWindow):
 
         self.reload_calendar()
 
-    # ---------------------------------------------------
     def open_employees(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Управление на служители")
@@ -148,32 +154,25 @@ class MainWindow(QMainWindow):
         dialog.exec()
         self.emp_widget = None
 
-    # ---------------------------------------------------
     def on_add_employee(self, data):
         self.client.add_employee(data)
         self.employees = self.client.get_employees()
-
         if self.emp_widget:
             self.emp_widget.reload_list(self.employees)
-
         self.reload_calendar()
 
     def on_update_employee(self, data):
         self.client.update_employee(data["id"], data)
         self.employees = self.client.get_employees()
-
         if self.emp_widget:
             self.emp_widget.reload_list(self.employees)
-
         self.reload_calendar()
 
     def on_delete_employee(self, emp_id):
         self.client.delete_employee(emp_id)
         self.employees = self.client.get_employees()
-
         if self.emp_widget:
             self.emp_widget.reload_list(self.employees)
-
         self.reload_calendar()
 
 

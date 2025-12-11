@@ -35,21 +35,18 @@ class APIClient:
 
     def update_employee(self, emp_id, data):
         r = requests.put(f"{self.base}/employees/{emp_id}/", json=data)
-
         if r.status_code == 404:
             return {"updated": False, "reason": "not found"}
-
         r.raise_for_status()
         return r.json()
 
     def delete_employee(self, emp_id):
         url = f"{self.base}/employees/{emp_id}/"
         r = requests.delete(url)
-
         if r.status_code == 404:
             return {"deleted": False, "reason": "not found"}
-
         r.raise_for_status()
         return {"deleted": True}
+
 
 

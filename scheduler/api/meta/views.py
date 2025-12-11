@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.conf import settings
 
+from scheduler.api.utils.holidays import get_holidays_for_month
 
 DATA_DIR = settings.BASE_DIR / "data"
 
@@ -44,17 +45,23 @@ class MetaMonthInfoView(APIView):
         month = int(month)
 
         days = calendar.monthrange(year, month)[1]
-        weekday_start = calendar.monthrange(year, month)[0]  # Monday=0
 
-        weekday_map = {}
+
+        weekends = []
         for d in range(1, days + 1):
-            weekday_map[str(d)] = calendar.weekday(year, month, d)
+            wd = calendar.weekday(year, month, d)
+            if wd in (5, 6):  # Sat or Sun
+                weekends.append(d)
+
+
+        holidays = get_holidays_for_month(year, month)
 
         return Response({
+            "year": year,
+            "month": month,
             "days": days,
-            "weekday_start": weekday_start,
-            "weekday_map": weekday_map
+            "weekends": weekends,
+            "holidays": holidays
         })
-
 
 

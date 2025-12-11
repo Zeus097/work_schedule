@@ -1,12 +1,14 @@
+import calendar
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
 from scheduler.models import MonthRecord, Employee
 from scheduler.logic.generator.generator import generate_new_month
+from scheduler.logic.months_logic import load_month, save_month
+from scheduler.logic.generator.apply_overrides import apply_overrides
 
 from scheduler.api.errors import api_error
-
 from scheduler.api.serializers import (
     OverrideSerializer,
     GenerateMonthSerializer,
@@ -14,10 +16,31 @@ from scheduler.api.serializers import (
     EmployeeUpdateSerializer
 )
 
-from scheduler.logic.months_logic import load_month, save_month
-from scheduler.logic.generator.apply_overrides import apply_overrides
+from scheduler.api.utils.holidays import get_holidays_for_month
 
 
+class MonthInfoView(APIView):
+    def get(self, request, year, month):
+        year = int(year)
+        month = int(month)
+
+        days_count = calendar.monthrange(year, month)[1]
+
+        weekends = []
+        for d in range(1, days_count + 1):
+            wd = calendar.weekday(year, month, d)
+            if wd in (5, 6):
+                weekends.append(d)
+
+        holidays = get_holidays_for_month(year, month)
+
+        return Response({
+            "year": year,
+            "month": month,
+            "days": days_count,
+            "weekends": weekends,
+            "holidays": holidays,
+        })
 
 
 class ScheduleView(APIView):
@@ -35,7 +58,6 @@ class ScheduleView(APIView):
         return Response(data, status=status.HTTP_200_OK)
 
 
-
 class GenerateMonthView(APIView):
     def post(self, request):
         serializer = GenerateMonthSerializer(data=request.data)
@@ -50,21 +72,14 @@ class GenerateMonthView(APIView):
         year = data['year']
         month = data['month']
 
-        # Generate month (returns dict)
         generated = generate_new_month(year, month)
 
-        # Return the raw JSON
         return Response({
             "year": year,
             "month": month,
             "generated": True,
             "data": generated
         }, status=status.HTTP_201_CREATED)
-
-
-
-
-
 
 
 class EmployeeListCreateView(APIView):
@@ -87,10 +102,8 @@ class EmployeeListCreateView(APIView):
         return Response(EmployeeSerializer(employee).data, status=status.HTTP_201_CREATED)
 
 
-
 class EmployeeDetailView(APIView):
     def put(self, request, id):
-        # lookup
         try:
             employee = Employee.objects.get(id=id)
         except Employee.DoesNotExist:
@@ -101,7 +114,6 @@ class EmployeeDetailView(APIView):
                 http_status=status.HTTP_404_NOT_FOUND
             )
 
-        # validation
         serializer = EmployeeUpdateSerializer(data=request.data)
         if not serializer.is_valid():
             return api_error(
@@ -112,16 +124,13 @@ class EmployeeDetailView(APIView):
 
         data = serializer.validated_data
 
-        # update only the provided fields
         for field, value in data.items():
             setattr(employee, field, value)
 
         employee.save()
-
         return Response(EmployeeSerializer(employee).data, status=status.HTTP_200_OK)
 
     def delete(self, request, id):
-        # lookup
         try:
             employee = Employee.objects.get(id=id)
         except Employee.DoesNotExist:
@@ -133,9 +142,7 @@ class EmployeeDetailView(APIView):
             )
 
         employee.delete()
-
         return Response({"status": "deleted"}, status=status.HTTP_204_NO_CONTENT)
-
 
 
 class ScheduleOverrideAPI(APIView):
@@ -146,26 +153,22 @@ class ScheduleOverrideAPI(APIView):
 
         data = load_month(year, month)
 
-        # ensure overrides section exists
         if "overrides" not in data:
             data["overrides"] = {}
 
-        # create bucket for employee if missing
         if employee_id not in data["overrides"]:
             data["overrides"][employee_id] = {}
 
-        # write override
         data["overrides"][employee_id][day] = shift
 
-        # re-apply overrides to schedule
         data["schedule"] = apply_overrides(
             data["schedule"],
             data["overrides"]
         )
 
-        # save
         save_month(year, month, data)
 
         return Response({"status": "ok", "applied": True})
+
 
 
