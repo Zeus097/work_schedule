@@ -22,36 +22,17 @@ from scheduler.logic.generator.apply_overrides import apply_overrides
 
 class ScheduleView(APIView):
     def get(self, request, year, month):
-
-        # check if month exists
         try:
-            record = MonthRecord.objects.get(year=year, month=month)
-        except MonthRecord.DoesNotExist:
-            generate_new_month(year, month)
-            record = MonthRecord.objects.get(year=year, month=month)
+            data = load_month(year, month)
+        except FileNotFoundError:
+            return api_error(
+                code="NOT_FOUND",
+                message="Месецът не съществува.",
+                hint="Генерирайте го чрез /api/generate-month/.",
+                http_status=status.HTTP_404_NOT_FOUND
+            )
 
-        # return raw JSON data
-        return Response({
-            "year": year,
-            "month": month,
-            "data": record.data
-        }, status=status.HTTP_200_OK)
-
-
-
-
-
-
-class ScheduleOverrideView(APIView):
-    def post(self, request, year, month):
-        return api_error(
-            code="NOT_SUPPORTED",
-            message="Override функционалността ще бъде активирана след обновяване на JSON структурата.",
-            hint="Очаква се във Фаза 2 – Стъпка 6.",
-            http_status=status.HTTP_400_BAD_REQUEST
-        )
-
-
+        return Response(data, status=status.HTTP_200_OK)
 
 
 
