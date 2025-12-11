@@ -32,7 +32,7 @@ def test_get_month_path(tmp_path, monkeypatch):
     ml = reload_months_logic_with_data_dir(data_dir)
 
     p = ml.get_month_path(2026, 1)
-    assert str(p).endswith("2026-01.json")
+    assert str(p).endswith("1.json")
 
 
 def test_save_and_load_month(tmp_path, monkeypatch):
@@ -58,7 +58,7 @@ def test_list_month_files(tmp_path, monkeypatch):
     data_dir = Path(tmp_path) / "data"
     data_dir.mkdir()
 
-    (data_dir / "2026-01.json").write_text("{}")
+    (data_dir / "1.json").write_text("{}")
     (data_dir / "2026-02.json").write_text("{}")
     (data_dir / "ignore.txt").write_text("x")
 
@@ -78,7 +78,7 @@ def test_get_latest_month(tmp_path, monkeypatch):
     data_dir = Path(tmp_path) / "data"
     data_dir.mkdir()
 
-    (data_dir / "2026-01.json").write_text('{"a":1}')
+    (data_dir / "1.json").write_text('{"a":1}')
     (data_dir / "2026-03.json").write_text('{"b":2}')
 
     ml = reload_months_logic_with_data_dir(data_dir)
