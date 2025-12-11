@@ -13,3 +13,12 @@ class APIClient:
 
     def get_month_info(self, year: int, month: int):
         return requests.get(f"{self.base}/meta/month-info/{year}/{month}/").json()
+
+    def get_schedule(self, year: int, month: int):
+        url = f"{self.base}/schedule/{year}/{month}/"
+        return requests.get(url).json()
+
+    def get_employees(self):
+        return requests.get(f"{self.base}/employees/").json()
+
+

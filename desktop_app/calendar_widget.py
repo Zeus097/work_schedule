@@ -11,6 +11,7 @@ class CalendarWidget(QWidget):
 
         self.year = year
         self.month = month
+        self.shifts = {}  # важно — да има default
 
         self.layout = QGridLayout()
         self.setLayout(self.layout)
@@ -23,7 +24,6 @@ class CalendarWidget(QWidget):
             if widget:
                 widget.deleteLater()
 
-
         week_days = ["Пон", "Вт", "Ср", "Чет", "Пет", "Съб", "Нед"]
 
         for col, day in enumerate(week_days):
@@ -32,16 +32,23 @@ class CalendarWidget(QWidget):
             label.setStyleSheet("font-weight: bold; color: white;")
             self.layout.addWidget(label, 0, col)
 
-
         cal = calendar.monthcalendar(self.year, self.month)
 
         for row_idx, week in enumerate(cal, start=1):
             for col_idx, day in enumerate(week):
 
                 if day == 0:
-                    cell = QLabel("")
+                    text = ""
+
                 else:
-                    cell = QLabel(str(day))
+                    if day in self.shifts:
+                        shift_text = "\n".join(self.shifts[day])
+                    else:
+                        shift_text = ""
+
+                    text = f"{day}\n{shift_text}"
+
+                cell = QLabel(text)
 
                 cell.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 cell.setSizePolicy(QSizePolicy.Policy.Expanding,
@@ -66,5 +73,9 @@ class CalendarWidget(QWidget):
                     """)
 
                 self.layout.addWidget(cell, row_idx, col_idx)
+
+    def set_day_shifts(self, shifts: dict):
+        self.shifts = shifts
+        self.build_calendar()
 
 
