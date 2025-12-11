@@ -5,6 +5,7 @@ from scheduler.api.views import (
     GenerateMonthView,
     EmployeeListCreateView,
     EmployeeDetailView,
+    ScheduleOverrideAPI,
 )
 
 urlpatterns = [
@@ -15,6 +16,10 @@ urlpatterns = [
 
     path('employees/', EmployeeListCreateView.as_view(), name='api_employees'),
     path('employees/<int:id>/', EmployeeDetailView.as_view(), name='api_employee_detail'),
+    path(
+        "schedule/<int:year>/<int:month>/override/",
+        ScheduleOverrideAPI.as_view(),
+    ),
 ]
 
 

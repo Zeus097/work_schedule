@@ -14,6 +14,10 @@ from scheduler.api.serializers import (
     EmployeeUpdateSerializer
 )
 
+from scheduler.logic.months_logic import load_month, save_month
+from scheduler.logic.generator.apply_overrides import apply_overrides
+
+
 
 
 class ScheduleView(APIView):
@@ -151,5 +155,36 @@ class EmployeeDetailView(APIView):
 
         return Response({"status": "deleted"}, status=status.HTTP_204_NO_CONTENT)
 
+
+
+class ScheduleOverrideAPI(APIView):
+    def post(self, request, year, month):
+        employee_id = str(request.data["employee_id"])
+        day = str(request.data["day"])
+        shift = request.data["shift"]
+
+        data = load_month(year, month)
+
+        # ensure overrides section exists
+        if "overrides" not in data:
+            data["overrides"] = {}
+
+        # create bucket for employee if missing
+        if employee_id not in data["overrides"]:
+            data["overrides"][employee_id] = {}
+
+        # write override
+        data["overrides"][employee_id][day] = shift
+
+        # re-apply overrides to schedule
+        data["schedule"] = apply_overrides(
+            data["schedule"],
+            data["overrides"]
+        )
+
+        # save
+        save_month(year, month, data)
+
+        return Response({"status": "ok", "applied": True})
 
 
