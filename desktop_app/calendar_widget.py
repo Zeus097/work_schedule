@@ -1,81 +1,89 @@
 from PyQt6.QtWidgets import (
-    QWidget, QGridLayout, QLabel, QSizePolicy
+    QWidget, QGridLayout, QLabel, QPushButton, QMenu
 )
-from PyQt6.QtCore import Qt
-import calendar
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QAction
 
 
 class CalendarWidget(QWidget):
-    def __init__(self, year, month, parent=None):
+
+    cell_clicked = pyqtSignal(int, str)
+
+    def __init__(self, parent=None):
         super().__init__(parent)
-
-        self.year = year
-        self.month = month
-        self.shifts = {}  # важно — да има default
-
         self.layout = QGridLayout()
         self.setLayout(self.layout)
 
-        self.build_calendar()
+        self.day_buttons = {}  # (row, col): QPushButton
 
-    def build_calendar(self):
-        for i in reversed(range(self.layout.count())):
-            widget = self.layout.itemAt(i).widget()
+    # ---------------------------------------------------
+    def clear(self):
+        while self.layout.count():
+            item = self.layout.takeAt(0)
+            widget = item.widget()
             if widget:
                 widget.deleteLater()
+        self.day_buttons.clear()
 
-        week_days = ["Пон", "Вт", "Ср", "Чет", "Пет", "Съб", "Нед"]
+    # ---------------------------------------------------
+    def build(self, schedule_data):
+        """
+        schedule_data = {
+            "employees": [ "John", "Maria" ],
+            "days": [1..31],
+            "schedule": { "John": {"1":"Д", "2":"Н"} ... }
+        }
+        """
 
-        for col, day in enumerate(week_days):
-            label = QLabel(day)
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            label.setStyleSheet("font-weight: bold; color: white;")
-            self.layout.addWidget(label, 0, col)
+        self.clear()
 
-        cal = calendar.monthcalendar(self.year, self.month)
+        employees = schedule_data["employees"]
+        days = schedule_data["days"]
+        schedule = schedule_data["schedule"]
 
-        for row_idx, week in enumerate(cal, start=1):
-            for col_idx, day in enumerate(week):
+        # ----- Header row with days -----
+        for col, day in enumerate(days):
+            lbl = QLabel(str(day))
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.layout.addWidget(lbl, 0, col + 1)
 
-                if day == 0:
-                    text = ""
+        # ----- Rows: employees -----
+        for row, emp in enumerate(employees, start=1):
 
-                else:
-                    if day in self.shifts:
-                        shift_text = "\n".join(self.shifts[day])
-                    else:
-                        shift_text = ""
+            emp_lbl = QLabel(emp)
+            self.layout.addWidget(emp_lbl, row, 0)
 
-                    text = f"{day}\n{shift_text}"
+            # Cells for each day
+            for col, day in enumerate(days):
+                shift_value = schedule.get(emp, {}).get(str(day), "")
 
-                cell = QLabel(text)
+                btn = QPushButton(shift_value)
+                btn.setProperty("day", day)
+                btn.setProperty("employee", emp)
 
-                cell.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                cell.setSizePolicy(QSizePolicy.Policy.Expanding,
-                                   QSizePolicy.Policy.Expanding)
+                # bind ALL values correctly
+                btn.clicked.connect(
+                    lambda _, d=day, e=emp: self.on_cell_click(d, e)
+                )
 
+                self.layout.addWidget(btn, row, col + 1)
+                self.day_buttons[(row, col)] = btn
 
-                cell.setStyleSheet("""
-                    background: white;
-                    color: black;
-                    border: 1px solid #ccc;
-                    padding: 4px;
-                """)
+    # ---------------------------------------------------
+    def on_cell_click(self, day, employee):
+        menu = QMenu(self)
 
-
-                if col_idx >= 5:
-                    cell.setStyleSheet("""
-                        background: #444;
-                        color: red;
-                        border: 1px solid #ccc;
-                        padding: 4px;
-                        font-weight: bold;
-                    """)
-
-                self.layout.addWidget(cell, row_idx, col_idx)
-
-    def set_day_shifts(self, shifts: dict):
-        self.shifts = shifts
-        self.build_calendar()
+        for code in ["", "Д", "Н", "П", "В"]:
+            label = code if code else "—"
+            action = QAction(label, self)
 
 
+            action.triggered.connect(
+                lambda _, d=day, e=employee, c=code:
+                    self.cell_clicked.emit(d, f"{e}:{c}")
+            )
+
+            menu.addAction(action)
+
+        # showing the menu
+        menu.exec(self.mapToGlobal(self.cursor().pos()))

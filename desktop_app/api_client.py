@@ -1,6 +1,7 @@
 import requests
 from config import API_BASE_URL
 
+
 class APIClient:
     def __init__(self):
         self.base = API_BASE_URL
@@ -20,5 +21,11 @@ class APIClient:
 
     def get_employees(self):
         return requests.get(f"{self.base}/employees/").json()
+
+    def post_override(self, year, month, data):
+        url = f"{self.base}/schedule/{year}/{month}/override/"
+        r = requests.post(url, json=data)
+        r.raise_for_status()
+        return r.json()
 
 

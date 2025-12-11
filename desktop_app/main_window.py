@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QComboBox, QLabel
+    QPushButton, QComboBox, QLabel, QGridLayout
 )
 from api_client import APIClient
 from calendar_widget import CalendarWidget
@@ -16,7 +16,8 @@ class MainWindow(QMainWindow):
         self.current_year = 2025
         self.current_month = 1
 
-        self.employees = self.client.get_employees()  # нужно за подредбата на смените
+
+        self.employees = self.client.get_employees()
 
         self.build_ui()
 
@@ -24,7 +25,6 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout()
 
         # --- Grid layout for labels + fields ---
-        from PyQt6.QtWidgets import QGridLayout
         grid = QGridLayout()
 
         # Labels
@@ -57,38 +57,82 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(grid)
 
         # --- Calendar ---
-        self.calendar = CalendarWidget(self.current_year, self.current_month)
+        self.calendar = CalendarWidget()
+        self.calendar.cell_clicked.connect(self.on_override_requested)  # <<< ВАЖНО
         main_layout.addWidget(self.calendar)
 
         container = QWidget()
         container.setLayout(main_layout)
         self.setCentralWidget(container)
 
+        # Load initial month
+        self.reload_calendar()
 
+
+
+
+    # ---------------------------------------------
+    # RELOAD SCHEDULE AND REBUILD CALENDAR
+    # ---------------------------------------------
     def reload_calendar(self):
         year = int(self.year_select.currentText())
         month = int(self.month_select.currentText())
 
         # --- Get schedule from API ---
         data = self.client.get_schedule(year, month)
-
-        shifts = {}
         schedule = data.get("schedule", {})
 
         # Ordered list of employee names
         ordered_names = [emp["full_name"] for emp in self.employees]
 
-        for name in ordered_names:
-            days = schedule.get(name, {})
-            for day_str, sm in days.items():
-                day = int(day_str)
-                shifts.setdefault(day, []).append(sm)
+        # Build calendar input format
+        schedule_data = {
+            "employees": ordered_names,
+            "days": list(range(1, 32)),
+            "schedule": schedule
+        }
 
-        # Replace calendar in UI
+        # Replace calendar widget
         self.calendar.setParent(None)
-        self.calendar = CalendarWidget(year, month)
-        self.calendar.set_day_shifts(shifts)
+        self.calendar = CalendarWidget()
+        self.calendar.cell_clicked.connect(self.on_override_requested)
+        self.calendar.build(schedule_data)
 
+        # Re-add to layout
         self.centralWidget().layout().addWidget(self.calendar)
+
+
+
+
+
+
+    # ---------------------------------------------
+    # HANDLE OVERRIDE CLICK
+    # ---------------------------------------------
+    def on_override_requested(self, day, payload):
+        employee, new_shift = payload.split(":")
+
+        if not new_shift:
+            new_shift = ""  # празна смяна
+
+        year = int(self.year_select.currentText())
+        month = int(self.month_select.currentText())
+
+        data = {
+            "employee": employee,
+            "day": day,
+            "new_shift": new_shift
+        }
+
+        try:
+            response = self.client.post_override(year, month, data)
+            print("Override OK:", response)
+            self.reload_calendar()  # 🔄 reloading UI
+        except Exception as e:
+            print("Override error:", e)
+
+
+
+
 
 
