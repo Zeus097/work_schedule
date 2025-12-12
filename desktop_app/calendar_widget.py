@@ -6,11 +6,33 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QMouseEvent
 
 
+SHIFT_COLORS = {
+    "Д": "background-color: #4da6ff; border: 1px solid #1f5f99; color: black;",  # Day
+    "Н": "background-color: #b36bff; border: 1px solid #6b2fb3; color: black;",  # Night
+    "В": "background-color: #ff6b6b; border: 1px solid #a83232; color: black;",  # Second
+    "П": "background-color: #63d471; border: 1px solid #2b8a3e; color: black;",  # Admin
+    "":  "background-color: #3a3a3a; border: 1px solid #555; color: white;",      # Empty
+}
+
+
 class ClickableLabel(QLabel):
     clicked = pyqtSignal()
 
-    def set_shift(self, value: str):
+    def set_shift(self, value: str, weekend=False, holiday=False):
         self.setText(value)
+
+        # override weekend/holiday color only if empty
+        if value == "":
+            if holiday:
+                self.setStyleSheet("background-color: #add8ff; border: 1px solid #6aa0d6; color: black;")
+                return
+            if weekend:
+                self.setStyleSheet("background-color: #ff9b9b; border: 1px solid #a83232; color: black;")
+                return
+
+        # normal shift color
+        color = SHIFT_COLORS.get(value, SHIFT_COLORS[""])
+        self.setStyleSheet(color)
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -18,7 +40,7 @@ class ClickableLabel(QLabel):
 
 
 class CalendarWidget(QWidget):
-    cell_clicked = pyqtSignal(int, str)
+    cell_clicked = pyqtSignal(int, str)  # day, "Employee:Shift"
 
     BUTTON_SIZE = 34
     NAME_COL_WIDTH = 180
@@ -28,10 +50,10 @@ class CalendarWidget(QWidget):
 
         self.root_layout = QVBoxLayout()
         self.root_layout.setContentsMargins(10, 10, 10, 10)
-        self.root_layout.setSpacing(4)
+        self.root_layout.setSpacing(2)
         self.setLayout(self.root_layout)
 
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self.day_cells = {}
         self.days = []
@@ -47,105 +69,131 @@ class CalendarWidget(QWidget):
                 w.deleteLater()
 
         self.day_cells.clear()
-        self.days = []
-        self.employees = []
 
     def setup(self, employees, days, schedule, weekends, holidays):
         self.clear()
+
         self.employees = employees
         self.days = days
         self.weekends = weekends
         self.holidays = holidays
 
-        header_layout = QHBoxLayout()
-        header_layout.setSpacing(2)
+        # Header with day numbers
+        header = QHBoxLayout()
+        header.setSpacing(2)
 
-        name_spacer = QLabel("")
-        name_spacer.setFixedWidth(self.NAME_COL_WIDTH)
-        header_layout.addWidget(name_spacer)
+        spacer = QLabel("")
+        spacer.setFixedWidth(self.NAME_COL_WIDTH)
+        header.addWidget(spacer)
 
-        for day in self.days:
+        for day in days:
             lbl = QLabel(str(day))
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
             lbl.setStyleSheet("color: white;")
-            header_layout.addWidget(lbl)
+            header.addWidget(lbl)
 
-        self.root_layout.addLayout(header_layout)
+        self.root_layout.addLayout(header)
 
-        for row_idx, emp in enumerate(self.employees):
-            row_layout = QHBoxLayout()
-            row_layout.setSpacing(2)
+        # Rows (employees)
+        for emp in employees:
+            row = QHBoxLayout()
+            row.setSpacing(2)
 
             name_lbl = QLabel(emp)
-            name_lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             name_lbl.setFixedSize(self.NAME_COL_WIDTH, self.BUTTON_SIZE)
-            name_lbl.setStyleSheet("color: white;")
-            row_layout.addWidget(name_lbl)
+            name_lbl.setStyleSheet("color: white; padding-left: 6px;")
+            name_lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+            row.addWidget(name_lbl)
 
             emp_schedule = schedule.get(emp, {})
 
-            for col_idx, day in enumerate(self.days):
-                shift_value = emp_schedule.get(str(day), "")
+            for day in days:
+                shift = emp_schedule.get(str(day), "")
 
-                cell = ClickableLabel(shift_value)
+                cell = ClickableLabel(shift)
                 cell.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 cell.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
 
-
-                if day in self.holidays:
-                    cell.setStyleSheet(
-                        "background-color: #add8ff; border: 1px solid #6aa0d6; color: black;"
-                    )
-                elif day in self.weekends:
-                    cell.setStyleSheet(
-                        "background-color: #ff6b6b; border: 1px solid #a83232; color: black;"
-                    )
-                else:
-                    cell.setStyleSheet(
-                        "background-color: #3a3a3a; border: 1px solid #555; color: white;"
-                    )
-
-                # click handler
-                cell.clicked.connect(
-                    lambda _, d=day, e=emp: self.on_cell_click(d, e)
+                # Set initial style
+                cell.set_shift(
+                    shift,
+                    weekend=(day in weekends),
+                    holiday=(day in holidays),
                 )
 
-                row_layout.addWidget(cell)
-
+                # binding click
+                cell.clicked.connect(
+                    self._make_cell_click_handler(emp, day)
+                )
 
                 self.day_cells[(emp, day)] = cell
+                row.addWidget(cell)
 
-            self.root_layout.addLayout(row_layout)
+            self.root_layout.addLayout(row)
 
-        total_width = self.NAME_COL_WIDTH + len(self.days) * (self.BUTTON_SIZE + 2) + 40
-        total_height = (len(self.employees) + 1) * (self.BUTTON_SIZE + 6) + 40
+        # Autosize
+        total_width = self.NAME_COL_WIDTH + len(days) * (self.BUTTON_SIZE + 2) + 40
+        total_height = (len(employees) + 1) * (self.BUTTON_SIZE + 6) + 40
 
         self.setMinimumSize(total_width, total_height)
+        self.adjustSize()
+        self.updateGeometry()
 
-    def on_cell_click(self, day, employee):
+    def _make_cell_click_handler(self, employee, day):
+        def handler():
+            self._open_shift_menu(employee, day)
+        return handler
+
+    def _open_shift_menu(self, employee, day):
+        cell = self.day_cells[(employee, day)]
         menu = QMenu(self)
 
-        for code in ["", "Д", "Н", "П", "В"]:
-            label = code if code else "—"
+        for code, label in {
+            "": "—",
+            "Д": "Дневна",
+            "Н": "Нощна",
+            "В": "Втора",
+            "П": "Админ",
+        }.items():
+
             action = QAction(label, self)
-            action.triggered.connect(
-                lambda _, d=day, e=employee, c=code:
-                    self.cell_clicked.emit(d, f"{e}:{c}")
-            )
+            action.triggered.connect(self._make_shift_handler(employee, day, code))
             menu.addAction(action)
 
-        menu.exec(self.mapToGlobal(self.cursor().pos()))
+        menu.exec(cell.mapToGlobal(cell.rect().bottomLeft()))
 
+    def _make_shift_handler(self, employee, day, shift_code):
+        def handler():
+            cell = self.day_cells.get((employee, day))
+            if not cell:
+                return
+
+            # instantly update UI (no reload!)
+            cell.set_shift(
+                shift_code,
+                weekend=(day in self.weekends),
+                holiday=(day in self.holidays),
+            )
+
+            # notify backend
+            self.cell_clicked.emit(day, f"{employee}:{shift_code}")
+
+        return handler
 
     def apply_schedule(self, schedule: dict):
-        for employee, days in schedule.items():
+        for emp, days in schedule.items():
             for day_str, shift_code in days.items():
                 day = int(day_str)
-                cell = self.day_cells.get((employee, day))
-                if cell:
-                    cell.set_shift(shift_code)
+                cell = self.day_cells.get((emp, day))
+                if not cell:
+                    continue
 
+                cell.set_shift(
+                    shift_code,
+                    weekend=(day in self.weekends),
+                    holiday=(day in self.holidays),
+                )
 
 
 

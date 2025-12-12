@@ -873,19 +873,5 @@
       "next_shift_ideal": "A",
       "consecutive_same_shift": 5
     }
-  },
-  "overrides": {
-    "34": {
-      "7": null
-    },
-    "35": {
-      "7": null,
-      "6": "Д",
-      "8": "В",
-      "14": "П"
-    },
-    "37": {
-      "9": null
-    }
   }
 }

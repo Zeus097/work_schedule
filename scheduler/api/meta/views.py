@@ -1,4 +1,5 @@
 import os
+import re
 import calendar
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -8,34 +9,33 @@ from scheduler.api.utils.holidays import get_holidays_for_month
 
 DATA_DIR = settings.BASE_DIR / "data"
 
+# Файловете ти са: 2025-01.json, 2025-02.json, 2026-01.json
+FILE_PATTERN = re.compile(r"^(\d{4})-(\d{2})\.json$")
+
 
 class MetaYearsView(APIView):
     def get(self, request):
-        years = []
+        years = set()
 
-        for item in os.listdir(DATA_DIR):
-            if item.isdigit() and os.path.isdir(DATA_DIR / item):
-                years.append(item)
+        for filename in os.listdir(DATA_DIR):
+            match = FILE_PATTERN.match(filename)
+            if match:
+                years.add(match.group(1))  # година
 
-        years.sort()
+        years = sorted(list(years))
         return Response(years)
 
 
 class MetaMonthsView(APIView):
     def get(self, request, year):
-        year_dir = DATA_DIR / year
-        if not year_dir.exists():
-            return Response({year: []})
-
         months = []
 
-        for file in os.listdir(year_dir):
-            if file.endswith(".json"):
-                month = file.replace(".json", "")
-                if month.isdigit():
-                    months.append(month)
+        for filename in os.listdir(DATA_DIR):
+            match = FILE_PATTERN.match(filename)
+            if match and match.group(1) == year:
+                months.append(match.group(2))  # месец
 
-        months.sort(key=lambda x: int(x))
+        months = sorted(months, key=lambda x: int(x))
         return Response({year: months})
 
 
@@ -46,13 +46,10 @@ class MetaMonthInfoView(APIView):
 
         days = calendar.monthrange(year, month)[1]
 
-
-        weekends = []
-        for d in range(1, days + 1):
-            wd = calendar.weekday(year, month, d)
-            if wd in (5, 6):  # Sat or Sun
-                weekends.append(d)
-
+        weekends = [
+            d for d in range(1, days + 1)
+            if calendar.weekday(year, month, d) in (5, 6)
+        ]
 
         holidays = get_holidays_for_month(year, month)
 
@@ -63,5 +60,3 @@ class MetaMonthInfoView(APIView):
             "weekends": weekends,
             "holidays": holidays
         })
-
-

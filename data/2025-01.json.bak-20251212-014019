@@ -5,14 +5,14 @@
       "2": "Н",
       "3": "",
       "4": "",
-      "5": "П",
+      "5": "В",
       "6": "Д",
       "7": "Н",
       "8": "",
       "9": "",
       "10": "В",
       "11": "Д",
-      "12": "П",
+      "12": "Н",
       "13": "",
       "14": "",
       "15": "В",
@@ -531,35 +531,35 @@
     "Admin User": {
       "1": "А",
       "2": "А",
-      "3": "",
+      "3": "А",
       "4": "",
-      "5": "А",
+      "5": "",
       "6": "А",
       "7": "А",
       "8": "А",
       "9": "А",
-      "10": "",
+      "10": "А",
       "11": "",
-      "12": "А",
+      "12": "",
       "13": "А",
       "14": "А",
       "15": "А",
       "16": "А",
-      "17": "",
+      "17": "А",
       "18": "",
-      "19": "А",
+      "19": "",
       "20": "А",
       "21": "А",
       "22": "А",
       "23": "А",
-      "24": "",
+      "24": "А",
       "25": "",
-      "26": "А",
+      "26": "",
       "27": "А",
       "28": "А",
       "29": "А",
       "30": "А",
-      "31": ""
+      "31": "А"
     }
   },
   "ideal": {
@@ -733,7 +733,7 @@
       "name": "TestUser-596d230b-6f21-4a08-9feb-777c31fd00cd",
       "last_shift": "V",
       "last_day": null,
-      "total_workdays": 14,
+      "total_workdays": 15,
       "days_since": 0,
       "next_shift_ideal": "D",
       "consecutive_same_shift": 1
@@ -751,7 +751,7 @@
       "name": "User A",
       "last_shift": "N",
       "last_day": null,
-      "total_workdays": 13,
+      "total_workdays": 14,
       "days_since": 2,
       "next_shift_ideal": "V",
       "consecutive_same_shift": 1
@@ -760,7 +760,7 @@
       "name": "User-3f08ac3f-0caf-49f3-8322-0e3976cbdef7",
       "last_shift": "N",
       "last_day": null,
-      "total_workdays": 12,
+      "total_workdays": 13,
       "days_since": 1,
       "next_shift_ideal": "V",
       "consecutive_same_shift": 1
@@ -866,18 +866,20 @@
     },
     "Admin User": {
       "name": "Admin User",
-      "last_shift": "REST",
+      "last_shift": "A",
       "last_day": null,
-      "total_workdays": 22,
-      "days_since": 1,
+      "total_workdays": 23,
+      "days_since": 0,
       "next_shift_ideal": "A",
-      "consecutive_same_shift": 0
+      "consecutive_same_shift": 5
     }
   },
   "overrides": {
-    "John Doe": {
-      "5": "П",
-      "12": "П"
+    "34": {
+      "7": null
+    },
+    "35": {
+      "7": null
     }
   }
 }
