@@ -1,4 +1,3 @@
-import calendar
 import time
 
 from PyQt6.QtWidgets import (
@@ -30,47 +29,53 @@ class MainWindow(QMainWindow):
         self.employees = self.client.get_employees()
         self.emp_widget = None
 
+        self.current_year = None
+        self.current_month = None
+        self.current_schedule = {}
+
         self.build_ui()
 
+    # =====================================================
+    # UI
+    # =====================================================
     def build_ui(self):
         main_layout = QVBoxLayout()
         grid = QGridLayout()
 
-        # Labels
         grid.addWidget(QLabel("Година:"), 0, 0)
         grid.addWidget(QLabel("Месец:"), 0, 1)
 
-        # Year select
+        # -------- YEAR --------
         self.year_select = QComboBox()
-        for y in self.client.get_years():
+
+        years = self.client.get_years()
+        if not years:
+            # fallback – UI никога не остава празен
+            years = [2025, 2026, 2027]
+
+        for y in years:
             self.year_select.addItem(str(y))
+
         grid.addWidget(self.year_select, 1, 0)
 
-        # Month select
+        # -------- MONTH --------
         self.month_select = QComboBox()
         for m in range(1, 13):
             self.month_select.addItem(str(m))
+
         grid.addWidget(self.month_select, 1, 1)
 
-        # Default selections
-        if self.year_select.count():
-            self.year_select.setCurrentIndex(0)
-        if self.month_select.count():
-            self.month_select.setCurrentIndex(0)
-
-        # Load button
         load_btn = QPushButton("Зареди месец")
-        load_btn.clicked.connect(self.reload_calendar)
+        load_btn.clicked.connect(self.load_month)
         grid.addWidget(load_btn, 1, 2)
 
-        # Employees button
         employees_btn = QPushButton("Служители")
         employees_btn.clicked.connect(self.open_employees)
         grid.addWidget(employees_btn, 2, 0)
 
         main_layout.addLayout(grid)
 
-        # Titles
+        # -------- TITLES --------
         self.section_title = QLabel("КАНТАР")
         self.section_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.section_title.setStyleSheet("font-size: 22px; font-weight: bold;")
@@ -81,7 +86,7 @@ class MainWindow(QMainWindow):
         self.month_title.setStyleSheet("font-size: 18px; font-weight: bold;")
         main_layout.addWidget(self.month_title)
 
-        # Scroll area
+        # -------- CALENDAR --------
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         main_layout.addWidget(self.scroll)
@@ -90,21 +95,36 @@ class MainWindow(QMainWindow):
         container.setLayout(main_layout)
         self.setCentralWidget(container)
 
-        # React to changes
-        self.year_select.currentIndexChanged.connect(self.reload_calendar)
-        self.month_select.currentIndexChanged.connect(self.reload_calendar)
+        self.init_defaults()
 
-        self.reload_calendar()
+    # =====================================================
+    # DEFAULTS
+    # =====================================================
+    def init_defaults(self):
+        # default year = first available
+        if self.year_select.count() > 0:
+            self.year_select.setCurrentIndex(0)
 
-    def reload_calendar(self):
-        year_text = self.year_select.currentText()
-        month_text = self.month_select.currentText()
+        # default month = December
+        if self.month_select.count() > 0:
+            self.month_select.setCurrentIndex(11)
 
-        if not year_text or not month_text:
+        self.load_month()
+
+    # =====================================================
+    # LOAD MONTH
+    # =====================================================
+    def load_month(self):
+        if not self.year_select.currentText():
+            return
+        if not self.month_select.currentText():
             return
 
-        year = int(year_text)
-        month = int(month_text)
+        year = int(self.year_select.currentText())
+        month = int(self.month_select.currentText())
+
+        self.current_year = year
+        self.current_month = month
 
         self.month_title.setText(MONTH_NAMES.get(month, ""))
 
@@ -117,31 +137,32 @@ class MainWindow(QMainWindow):
             data = self.client.get_schedule(year, month)
         except FileNotFoundError:
             self.client.generate_month(year, month)
-            time.sleep(0.2)
+            time.sleep(0.1)
             data = self.client.get_schedule(year, month)
 
-        schedule = data.get("schedule", {})
+        self.current_schedule = data.get("schedule", {})
+        if not self.current_schedule:
+            return
 
+        ordered_names = list(self.current_schedule.keys())
 
-        ordered_names = [emp["full_name"] for emp in self.employees]
+        self.calendar = CalendarWidget()
+        self.calendar.cell_clicked.connect(self.on_override_requested)
 
-        calendar_widget = CalendarWidget()
-        calendar_widget.cell_clicked.connect(self.on_override_requested)
-
-        calendar_widget.setup(
+        self.calendar.setup(
             ordered_names,
             days,
-            schedule,
+            self.current_schedule,
             weekends,
             holidays
         )
 
+        self.calendar.apply_schedule(self.current_schedule)
+        self.scroll.setWidget(self.calendar)
 
-        calendar_widget.apply_schedule(schedule)
-
-        self.scroll.setWidget(calendar_widget)
-        self.calendar = calendar_widget
-
+    # =====================================================
+    # OVERRIDES
+    # =====================================================
     def on_override_requested(self, day, payload):
         employee_name, new_shift = payload.split(":")
 
@@ -152,24 +173,26 @@ class MainWindow(QMainWindow):
                 break
 
         if emp_id is None:
-            print(f"ГРЕШКА: няма такъв служител в БД → {employee_name}")
             return
 
-        year = int(self.year_select.currentText())
-        month = int(self.month_select.currentText())
-
-        try:
-            self.client.post_override(year, month, {
+        self.client.post_override(
+            self.current_year,
+            self.current_month,
+            {
                 "employee_id": emp_id,
                 "day": day,
                 "shift": new_shift
-            })
-        except Exception as e:
-            print("ГРЕШКА при override:", e)
-            return
+            }
+        )
 
-        self.reload_calendar()
+        emp_schedule = self.current_schedule.setdefault(employee_name, {})
+        emp_schedule[day] = new_shift
 
+        self.calendar.apply_schedule(self.current_schedule)
+
+    # =====================================================
+    # EMPLOYEES
+    # =====================================================
     def open_employees(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Управление на служители")
@@ -189,20 +212,14 @@ class MainWindow(QMainWindow):
     def on_add_employee(self, data):
         self.client.add_employee(data)
         self.employees = self.client.get_employees()
-        self.reload_calendar()
+        self.load_month()
 
     def on_update_employee(self, data):
         self.client.update_employee(data["id"], data)
         self.employees = self.client.get_employees()
-        self.reload_calendar()
+        self.load_month()
 
     def on_delete_employee(self, emp_id):
         self.client.delete_employee(emp_id)
         self.employees = self.client.get_employees()
-        self.reload_calendar()
-
-
-
-
-
-
+        self.load_month()

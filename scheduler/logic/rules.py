@@ -13,7 +13,7 @@ TO_CYR = {
     "V": "В",
     "N": "Н",
     "A": "А",
-    "O": "О",
+    "O": "П",     # отпуск / неработно (визуално "П")
     "REST": "",
 }
 
@@ -63,10 +63,13 @@ class ShiftTransitionRule:
     default_next: Optional[ShiftCode]
 
 
+# ✅ Цел:
+# - Д и В да се редуват (без Д→Д и В→В)
+# - Н да не е два поред и да е максимум "през ден"
 TRANSITION_RULES: Dict[str, ShiftTransitionRule] = {
-    "N": ShiftTransitionRule(1, 2, "V"),
+    "D": ShiftTransitionRule(0, 0, "V"),
     "V": ShiftTransitionRule(0, 0, "D"),
-    "D": ShiftTransitionRule(0, 0, "N"),
+    "N": ShiftTransitionRule(1, 1, "V"),   # след Н → поне 1 ден почивка, после връщане към В/Д
     "A": ShiftTransitionRule(0, 0, "A"),
     "O": ShiftTransitionRule(0, 0, None),
     "REST": ShiftTransitionRule(0, 0, None),
@@ -86,8 +89,7 @@ def get_preferred_next_shift(prev_shift):
 # --------------------------------------
 # Validation of allowed shift
 def is_shift_allowed(prev_shift, days_since_last_work, new_shift, crisis_mode) -> bool:
-
-    # Always allow REST
+    # Always allow REST-like
     if is_rest_like(new_shift):
         return True
 
@@ -95,20 +97,36 @@ def is_shift_allowed(prev_shift, days_since_last_work, new_shift, crisis_mode) -
     if prev_shift is None:
         return True
 
-    # Forbidden: Evening → Night (double shift)
-    if prev_shift == "V" and new_shift == "N":
+    # Admin is always allowed (if used)
+    if new_shift == "A":
+        return True
+
+    # ✅ Д/В редуване: забрани еднаква смяна поред
+    if prev_shift in {"D", "V"} and new_shift in {"D", "V"}:
+        if prev_shift == new_shift:
+            return False
+
+    # ❌ Забрани директно В→Н и Д→Н (няма двойна смяна)
+    if new_shift == "N" and prev_shift in {"D", "V"}:
         return False
 
-    rule = get_transition_rule(prev_shift)
+    # ✅ Н да е максимум "през ден":
+    # ако последната работа е била скоро → не допускай Н
+    if new_shift == "N":
+        required = 1  # през ден
+        if crisis_mode:
+            required = 1
+        if days_since_last_work < required:
+            return False
+        if prev_shift == "N":
+            return False
 
-    # Determine required rest days based on rules
-    required_rest = rule.preferred_rest_days
-    if crisis_mode:
-        required_rest = rule.min_rest_days
-
-    # Apply rest requirement only for rules that need it (mostly N → ...)
-    if is_real_shift(new_shift):
-        if days_since_last_work < required_rest:
+    # ✅ След Н: да има поне 1 ден почивка преди реална смяна
+    if prev_shift == "N" and new_shift in {"D", "V"}:
+        required = 1
+        if crisis_mode:
+            required = 1
+        if days_since_last_work < required:
             return False
 
     return True

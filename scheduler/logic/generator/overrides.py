@@ -1,7 +1,6 @@
 from dataclasses import dataclass
-from datetime import date
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 
 class OverrideKind(str, Enum):
@@ -26,10 +25,8 @@ class ManualOverride:
 
 def index_overrides(overrides: List[ManualOverride]):
     result: Dict[int, Dict[str, ManualOverride]] = {}
-
     for o in overrides:
         result.setdefault(o.date, {})[o.employee] = o
-
     return result
 
 

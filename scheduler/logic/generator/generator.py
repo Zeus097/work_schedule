@@ -1,16 +1,9 @@
 from __future__ import annotations
 
 import calendar
+
 from scheduler.logic.configuration_helpers import load_config
 from scheduler.logic.months_logic import get_latest_month
-
-from scheduler.logic.generator.data_model import EmployeeState
-from scheduler.logic.generator.workday_count import count_working_days
-from scheduler.logic.generator.state_prep import prepare_employee_states
-from scheduler.logic.generator.limits import choose_employee_for_shift
-from scheduler.logic.generator.apply_shift import apply_shift
-
-
 from scheduler.logic.generator.overrides import (
     index_overrides,
     get_override,
@@ -18,163 +11,224 @@ from scheduler.logic.generator.overrides import (
     NON_WORKING_CODES,
 )
 
+# Pattern:
+# D -> rest(1) -> N -> rest(2) -> V -> rest(1) -> D -> ...
+# Important: the day marked "N" is the day the person worked 00:00-08:00.
+# After that day there are exactly 2 empty rest days, then starts "V".
+REST_AFTER_D = 1
+REST_AFTER_V = 1
+REST_AFTER_N = 2
 
-SOFT_WORKDAYS_DEVIATION = 1
-HARD_WORKDAYS_DEVIATION = 2
+CYR = {"D": "Д", "V": "В", "N": "Н"}
+LAT = {v: k for k, v in CYR.items()}
 
+def _next_after(last_shift: str | None) -> str:
+    # Rotation: D -> N -> V -> D
+    if last_shift == "D":
+        return "N"
+    if last_shift == "N":
+        return "V"
+    if last_shift == "V":
+        return "D"
+    # new employee -> will be seeded elsewhere
+    return "D"
 
-# ======================================
-# MAIN GENERATOR
-# ======================================
+def _rest_after(shift: str) -> int:
+    if shift == "N":
+        return REST_AFTER_N
+    if shift == "D":
+        return REST_AFTER_D
+    if shift == "V":
+        return REST_AFTER_V
+    return 0
 
-def generate_new_month(year, month, overrides=None):
+def _seed_shift_for_name(name: str) -> str:
+    # stable distribution across D/V/N
+    s = sum(ord(c) for c in name)
+    return ("D", "V", "N")[s % 3]
+
+def _extract_last_shift_from_month(month_days: dict) -> str | None:
+    # month_days: {"1":"Д", ...} or {"1":"", ...}
+    last = None
+    for d in sorted(month_days.keys(), key=lambda x: int(x)):
+        v = month_days[d]
+        if v in ("Д", "В", "Н"):
+            last = LAT[v]
+    return last
+
+def generate_new_month(year: int, month: int, overrides=None):
     config = load_config()
 
     latest = get_latest_month()
-    last_month_data = latest[2] if latest else None
+    last_month_data = latest[2] if latest else None  # whatever storage returns
 
     _, num_days = calendar.monthrange(year, month)
 
-    schedule = {
-        emp["name"]: {day: "" for day in range(1, num_days + 1)}
-        for emp in config["employees"]
-    }
-
+    workers = [emp["name"] for emp in config["employees"]]
     admin_name = config["admin"]["name"]
+
+    schedule = {name: {day: "" for day in range(1, num_days + 1)} for name in workers}
     schedule[admin_name] = {day: "" for day in range(1, num_days + 1)}
 
+    # overrides index
     override_index = index_overrides(overrides or [])
 
-    employee_states = prepare_employee_states(config, last_month_data)
+    # admin working days (delnik only)
+    weekdays = {day: calendar.weekday(year, month, day) for day in range(1, num_days + 1)}
+    holidays = set()  # if later you add holidays, plug them here
 
-    # -----------------------------
-    # Workday and date info
-    # -----------------------------
-    holidays = set()
+    def admin_is_on(day: int) -> bool:
+        return (weekdays[day] < 5) and (day not in holidays)
 
-    working_days_in_month = count_working_days(year, month, holidays)
-    soft_min = working_days_in_month - SOFT_WORKDAYS_DEVIATION
-    soft_max = working_days_in_month + SOFT_WORKDAYS_DEVIATION
-    hard_min = working_days_in_month - HARD_WORKDAYS_DEVIATION
-    hard_max = working_days_in_month + HARD_WORKDAYS_DEVIATION
-
-    weekdays = {
-        day: calendar.weekday(year, month, day)
-        for day in range(1, num_days + 1)
-    }
-
-    # -----------------------------
-    # ADMINISTRATOR SHIFTS
-    # -----------------------------
     for day in range(1, num_days + 1):
-        wd = weekdays[day]
-        st_admin = employee_states[admin_name]
+        schedule[admin_name][day] = "А" if admin_is_on(day) else ""
 
-        if wd < 5 and day not in holidays:
-            schedule[admin_name][day] = "А"
-            apply_shift(st_admin, "A", is_workday=True)
-        else:
-            schedule[admin_name][day] = ""
-            apply_shift(st_admin, "REST", is_workday=False)
+    # --- init worker state (independent from EmployeeState to avoid breakage) ---
+    last_shift: dict[str, str | None] = {n: None for n in workers}
+    rest_left: dict[str, int] = {n: 0 for n in workers}
+    seed_shift: dict[str, str] = {n: _seed_shift_for_name(n) for n in workers}
 
-    ideal_for_day = {
-        day: {"D": None, "V": None, "N": None}
-        for day in range(1, num_days + 1)
-    }
+    if last_month_data and isinstance(last_month_data, dict):
+        # accept both {"days": {...}} and {"schedule": {...}} shapes
+        days_blob = last_month_data.get("days") or last_month_data.get("schedule") or {}
+        if isinstance(days_blob, dict):
+            for name in workers:
+                mdays = days_blob.get(name)
+                if isinstance(mdays, dict):
+                    ls = _extract_last_shift_from_month(mdays)
+                    if ls in ("D", "V", "N"):
+                        last_shift[name] = ls
+                        # after finishing last shift in prev month -> must rest at month start
+                        rest_left[name] = _rest_after(ls)
 
-    # =======================================================
-    # MAIN LOOP — APPLY OVERRIDES FIRST, THEN GENERATE SHIFTS
-    # =======================================================
+    # --- helpers for choosing employees ---
+    def desired_shift_for(name: str) -> str:
+        ls = last_shift[name]
+        if ls is None:
+            return seed_shift[name]
+        return _next_after(ls)
+
+    def is_available(name: str, target_shift: str, allow_crisis: bool) -> bool:
+        # If resting -> not available unless crisis
+        if rest_left[name] > 0 and not allow_crisis:
+            return False
+
+        # Must follow rotation unless crisis
+        want = desired_shift_for(name)
+        if want != target_shift and not allow_crisis:
+            return False
+
+        return True
+
+    def score(name: str) -> tuple:
+        # Prefer those with more rest already done (lower rest_left),
+        # then stable by name (simple, predictable)
+        return (rest_left[name], name)
+
+    # --- main day loop ---
     for day in range(1, num_days + 1):
+        # determine required shifts for the day
+        required = ["N", "V"]  # always must have N and V
+        if not admin_is_on(day):
+            # weekend/holiday: admin not there -> D must be covered by shifts team
+            required.append("D")
 
-        used_today = set()
-        wd = weekdays[day]
-        is_workday = wd < 5 and day not in holidays
-
-        # ============================================
-        # STEP 1 — APPLY MANUAL OVERRIDES FOR THIS DAY
-        # ============================================
-        for name, st in employee_states.items():
-            if name == admin_name:
-                continue
-
+        # locked overrides for today (per worker)
+        locked: dict[str, str] = {}
+        for name in workers:
             ov = get_override(override_index, day, name)
             if not ov:
                 continue
-
-
             if ov.shift_code in WORKING_CODES:
-                translated = {"D": "Д", "V": "В", "N": "Н"}[ov.shift_code]
-                schedule[name][day] = translated
-                apply_shift(st, ov.shift_code, is_workday=True)
-                used_today.add(name)
+                locked[name] = ov.shift_code  # "D"/"V"/"N"
+            elif ov.shift_code in NON_WORKING_CODES:
+                locked[name] = "REST"
+
+        assigned: dict[str, str] = {}  # shift -> name
+        used = set()
+
+        # 1) apply locked working shifts first
+        for name, val in locked.items():
+            if val in ("D", "V", "N") and val in required:
+                if val not in assigned and name not in used:
+                    assigned[val] = name
+                    used.add(name)
+
+        # 2) fill remaining required shifts
+        for sh in required:
+            if sh in assigned:
                 continue
 
-            if ov.shift_code in NON_WORKING_CODES:
-                schedule[name][day] = "П"   # visual symbol (adjust if needed)
-                apply_shift(st, "REST", is_workday=False)
-                used_today.add(name)
+            # normal pick (strict)
+            candidates = [
+                n for n in workers
+                if n not in used
+                and locked.get(n) != "REST"
+                and (locked.get(n) in (None, sh))
+                and is_available(n, sh, allow_crisis=False)
+            ]
+            if not candidates:
+                # crisis pick (can break rest/rotation to avoid gaps)
+                candidates = [
+                    n for n in workers
+                    if n not in used
+                    and locked.get(n) != "REST"
+                    and (locked.get(n) in (None, sh))
+                    and is_available(n, sh, allow_crisis=True)
+                ]
+
+            if candidates:
+                candidates.sort(key=score)
+                chosen = candidates[0]
+                assigned[sh] = chosen
+                used.add(chosen)
+            else:
+                # If even crisis can't fill -> leave unfilled (should happen only with heavy lock/rest)
+                # We do NOT crash; better to return something.
+                pass
+
+        # 3) write schedule + update rotation/rest
+        for name in workers:
+            # override REST forces empty cell
+            if locked.get(name) == "REST":
+                schedule[name][day] = ""
+                # consume one rest day if they were already resting
+                if rest_left[name] > 0:
+                    rest_left[name] -= 1
                 continue
 
-        # ====================================================
-        # STEP 2 – NORMAL SHIFT ASSIGNMENT FOR REMAINING CELLS
-        # ====================================================
-        # First, list employees blocked by overrides (cannot be assigned)
-        blocked = set()
-        for name in employee_states:
-            if name == admin_name:
+            # assigned?
+            worked_shift = None
+            for sh, emp in assigned.items():
+                if emp == name:
+                    worked_shift = sh
+                    break
+
+            if worked_shift is None:
+                # rest day
+                schedule[name][day] = ""
+                if rest_left[name] > 0:
+                    rest_left[name] -= 1
                 continue
-            if get_override(override_index, day, name):
-                blocked.add(name)
 
-        for shift_code, cyr in (("D", "Д"), ("V", "В"), ("N", "Н")):
+            # work day
+            schedule[name][day] = CYR[worked_shift]
+            last_shift[name] = worked_shift
+            rest_left[name] = _rest_after(worked_shift)
 
-            emp = choose_employee_for_shift(
-                states=employee_states,
-                shift_code=shift_code,
-                admin_name=admin_name,
-                used_today=used_today.union(blocked),
-                crisis_mode=False,
-                soft_min=soft_min,
-                soft_max=soft_max,
-                hard_min=hard_min,
-                hard_max=hard_max
-            )
+    # optional debug states
+    states_dump = {}
+    for name in workers + [admin_name]:
+        if name == admin_name:
+            states_dump[name] = {"type": "admin"}
+        else:
+            states_dump[name] = {
+                "last_shift": last_shift[name],
+                "rest_left": rest_left[name],
+                "desired_next": desired_shift_for(name),
+            }
 
-            # If no employee found → try crisis mode
-            if emp is None:
-                emp = choose_employee_for_shift(
-                    states=employee_states,
-                    shift_code=shift_code,
-                    admin_name=admin_name,
-                    used_today=used_today.union(blocked),
-                    crisis_mode=True,
-                    soft_min=soft_min,
-                    soft_max=soft_max,
-                    hard_min=hard_min,
-                    hard_max=hard_max
-                )
-
-            ideal_for_day[day][shift_code] = emp
-
-            if emp:
-                schedule[emp][day] = cyr
-                used_today.add(emp)
-                apply_shift(employee_states[emp], shift_code, is_workday)
-
-        # Increment days_since for employees without a shift
-        for name, st in employee_states.items():
-            if name == admin_name:
-                continue
-            if schedule[name][day] not in ("Д", "В", "Н"):
-                st.days_since += 1
-
-    # Return structure
     return {
         "schedule": schedule,
-        "ideal": ideal_for_day,
-        "states": {name: vars(st) for name, st in employee_states.items()},
+        "states": states_dump,
     }
-
-
-

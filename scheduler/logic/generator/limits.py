@@ -1,43 +1,49 @@
 from scheduler.logic.rules import is_shift_allowed
 from .data_model import EmployeeState
 
-MAX_CONSECUTIVE_SAME_SHIFT = 4
-ADMIN_MAX_CONSECUTIVE_SAME_SHIFT = 5
+BLOCK_SIZE = 4
+REST_AFTER_NIGHT = 3
 
 
-def is_consecutive_allowed(state: EmployeeState, new_shift: str, is_admin: bool) -> bool:
-    if new_shift not in {"D", "V", "N"}:
+def block_completed(state: EmployeeState) -> bool:
+    return state.consecutive_same_shift >= BLOCK_SIZE
+
+
+def is_in_rest_period(state: EmployeeState, new_shift: str) -> bool:
+
+    if state.last_shift != "N":
+        return False
+
+    if state.days_since < REST_AFTER_NIGHT:
         return True
 
-    if state.last_shift == new_shift:
-        next_cons = state.consecutive_same_shift + 1
-    else:
-        next_cons = 1
 
-    limit = ADMIN_MAX_CONSECUTIVE_SAME_SHIFT if is_admin else MAX_CONSECUTIVE_SAME_SHIFT
-    return next_cons <= limit
+    if state.days_since == REST_AFTER_NIGHT and new_shift != "V":
+        return True
+
+    return False
 
 
-def is_within_workday_limits(state: EmployeeState, is_admin: bool,
-                             soft_min: int, soft_max: int,
-                             hard_min: int, hard_max: int,
-                             crisis_mode: bool) -> bool:
+def is_block_transition_allowed(state: EmployeeState, new_shift: str) -> bool:
 
     if state.last_shift is None:
         return True
 
-    if is_admin:
+    if not block_completed(state):
+        # В рамките на блок → само същата смяна
+        return state.last_shift == new_shift
+
+    # Блокът е приключил → позволени ротации
+    if state.last_shift == "D" and new_shift == "V":
         return True
 
-    days = state.total_workdays
+    if state.last_shift == "V" and new_shift == "N":
+        return True
 
-    if days > hard_max:
-        return False
+    if state.last_shift == "N" and new_shift == "V":
+        return True
 
-    if days > soft_max and not crisis_mode:
-        return False
-
-    return True
+    return False
 
 
 def choose_employee_for_shift(
@@ -51,42 +57,40 @@ def choose_employee_for_shift(
     candidates = []
 
     for name, st in states.items():
-        is_admin = (name == admin_name)
-
-        if is_admin:
+        if name == admin_name:
             continue
 
         if name in used_today:
             continue
 
-        if st.last_shift == "V" and shift_code == "N":
+
+        if is_in_rest_period(st, shift_code):
             continue
 
+
+        if not is_block_transition_allowed(st, shift_code):
+            continue
+
+        # допълнителна защита
         if not is_shift_allowed(st.last_shift, st.days_since, shift_code, crisis_mode):
             continue
 
-        if not is_consecutive_allowed(st, shift_code, is_admin):
-            continue
-
-        if not is_within_workday_limits(st, is_admin, soft_min, soft_max, hard_min, hard_max, crisis_mode):
-            continue
-
-        ideal_match = 1 if st.next_shift_ideal == shift_code else 0
-
         candidates.append((
             name,
-            -ideal_match,
-            -st.days_since,
-            st.total_workdays
+            st.consecutive_same_shift,
+            st.total_workdays,
+            st.days_since
         ))
 
     if not candidates:
         return None
 
-    candidates.sort(key=lambda x: (x[1], x[2], x[3], x[0]))
+
+    candidates.sort(key=lambda x: (
+        -x[1],
+        x[2],
+        -x[3],
+        x[0]
+    ))
+
     return candidates[0][0]
-
-
-
-
-

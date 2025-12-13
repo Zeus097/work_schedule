@@ -27,13 +27,24 @@ class APIClient:
         if r.status_code == 404:
             raise FileNotFoundError
         r.raise_for_status()
-        return r.json()
+
+        data = r.json()
+
+        # 🔧 FIX 1 — normalize schedule (day keys -> int)
+        raw_schedule = data.get("schedule", {})
+        normalized_schedule = {
+            emp: {int(day): shift for day, shift in days.items()}
+            for emp, days in raw_schedule.items()
+        }
+
+        data["schedule"] = normalized_schedule
+        return data
 
     def generate_month(self, year: int, month: int):
-        r = requests.post(f"{self.base}/schedule/generate/", json={
-            "year": year,
-            "month": month
-        })
+        r = requests.post(
+            f"{self.base}/schedule/generate/",
+            json={"year": year, "month": month}
+        )
         r.raise_for_status()
         return r.json()
 
@@ -68,6 +79,7 @@ class APIClient:
         r = requests.delete(f"{self.base}/employees/{emp_id}/")
         r.raise_for_status()
         return True
+
 
 
 
