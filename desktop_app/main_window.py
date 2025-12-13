@@ -1,14 +1,20 @@
 import time
 
+import requests
+
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QPushButton,
-    QComboBox, QLabel, QGridLayout, QDialog, QScrollArea
+    QComboBox, QLabel, QGridLayout, QDialog, QScrollArea, QMessageBox
 )
 from PyQt6.QtCore import Qt
 
 from api_client import APIClient
 from calendar_widget import CalendarWidget
 from employees_widget import EmployeesWidget
+from desktop_app.ui.admin.admin_window import AdminWindow
+
+
+
 
 
 MONTH_NAMES = {
@@ -50,7 +56,6 @@ class MainWindow(QMainWindow):
 
         years = self.client.get_years()
         if not years:
-            # fallback – UI никога не остава празен
             years = [2025, 2026, 2027]
 
         for y in years:
@@ -72,6 +77,10 @@ class MainWindow(QMainWindow):
         employees_btn = QPushButton("Служители")
         employees_btn.clicked.connect(self.open_employees)
         grid.addWidget(employees_btn, 2, 0)
+
+        admin_btn = QPushButton("Администрация")   # ⬅️ НОВ БУТОН
+        admin_btn.clicked.connect(self.open_admin)
+        grid.addWidget(admin_btn, 2, 1)
 
         main_layout.addLayout(grid)
 
@@ -101,11 +110,9 @@ class MainWindow(QMainWindow):
     # DEFAULTS
     # =====================================================
     def init_defaults(self):
-        # default year = first available
         if self.year_select.count() > 0:
             self.year_select.setCurrentIndex(0)
 
-        # default month = December
         if self.month_select.count() > 0:
             self.month_select.setCurrentIndex(11)
 
@@ -161,6 +168,18 @@ class MainWindow(QMainWindow):
         self.scroll.setWidget(self.calendar)
 
     # =====================================================
+    # ADMIN
+    # =====================================================
+    def open_admin(self):
+        self.admin_window = AdminWindow(self)
+
+        # 🔑 подаваме контекст за preview
+        self.admin_window.current_schedule = self.current_schedule
+        self.admin_window.days_in_month = len(self.calendar.days)
+
+        self.admin_window.show()
+
+    # =====================================================
     # OVERRIDES
     # =====================================================
     def on_override_requested(self, day, payload):
@@ -199,27 +218,65 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout(dialog)
 
+        self.emp_dialog = QDialog(self)
+        self.emp_dialog.setWindowTitle("Управление на служители")
+
+        layout = QVBoxLayout(self.emp_dialog)
+
         self.emp_widget = EmployeesWidget(self.employees)
         layout.addWidget(self.emp_widget)
 
-        self.emp_widget.employee_added.connect(self.on_add_employee)
-        self.emp_widget.employee_updated.connect(self.on_update_employee)
-        self.emp_widget.employee_deleted.connect(self.on_delete_employee)
+        self.emp_widget.employee_added.connect(self._handle_employee_add)
+        self.emp_widget.employee_updated.connect(self._handle_employee_update)
+        self.emp_widget.employee_deleted.connect(self._handle_employee_delete)
 
-        dialog.exec()
+        self.emp_dialog.exec()
+
         self.emp_widget = None
+        self.emp_dialog = None
 
     def on_add_employee(self, data):
-        self.client.add_employee(data)
-        self.employees = self.client.get_employees()
-        self.load_month()
+        try:
+            self.client.add_employee(data)
+        except Exception:
+            pass
+        self._refresh_after_employee_change()
 
     def on_update_employee(self, data):
-        self.client.update_employee(data["id"], data)
-        self.employees = self.client.get_employees()
-        self.load_month()
+        try:
+            self.client.update_employee(data["id"], data)
+        except Exception:
+            pass
+        self._refresh_after_employee_change()
 
     def on_delete_employee(self, emp_id):
-        self.client.delete_employee(emp_id)
+        try:
+            self.client.delete_employee(emp_id)
+        except Exception:
+            pass
+        self._refresh_after_employee_change()
+
+    def _refresh_after_employee_change(self):
         self.employees = self.client.get_employees()
-        self.load_month()
+
+        if self.current_year and self.current_month:
+            self.load_month()
+
+    def _handle_employee_add(self, data):
+        self.on_add_employee(data)
+        self._reload_employees_dialog()
+
+    def _handle_employee_update(self, data):
+        self.on_update_employee(data)
+        self._reload_employees_dialog()
+
+    def _handle_employee_delete(self, emp_id):
+        self.on_delete_employee(emp_id)
+        self._reload_employees_dialog()
+
+    def _reload_employees_dialog(self):
+        if self.emp_dialog:
+            self.emp_dialog.close()
+            self.open_employees()
+
+

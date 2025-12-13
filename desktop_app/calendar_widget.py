@@ -11,7 +11,7 @@ SHIFT_COLORS = {
     "Н": "background-color: #b36bff; border: 1px solid #6b2fb3; color: black;",
     "В": "background-color: #ff6b6b; border: 1px solid #a83232; color: black;",
     "П": "background-color: #63d471; border: 1px solid #2b8a3e; color: black;",
-    "":  "background-color: #3a3a3a; border: 1px solid #555; color: white;",
+    "":  "background-color: white; border: 1px solid #ccc; color: black;",
 }
 
 
@@ -24,12 +24,12 @@ class ClickableLabel(QLabel):
         if value == "":
             if holiday:
                 self.setStyleSheet(
-                    "background-color: #add8ff; border: 1px solid #6aa0d6; color: black;"
+                    "background-color: #d0d0d0; border: 1px solid #999; color: black;"
                 )
                 return
             if weekend:
                 self.setStyleSheet(
-                    "background-color: #ff9b9b; border: 1px solid #a83232; color: black;"
+                    "background-color: #bfbfbf; border: 1px solid #888; color: black;"
                 )
                 return
 
@@ -41,10 +41,10 @@ class ClickableLabel(QLabel):
 
 
 class CalendarWidget(QWidget):
-    cell_clicked = pyqtSignal(int, str)  # day, "Employee:Shift"
+    cell_clicked = pyqtSignal(int, str)
 
     BUTTON_SIZE = 34
-    NAME_COL_WIDTH = 180
+    NAME_COL_WIDTH = 240  # ⬅️ по-широка колона за имена
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -77,7 +77,7 @@ class CalendarWidget(QWidget):
         self.weekends = weekends
         self.holidays = holidays
 
-        # HEADER
+        # ===== HEADER =====
         header = QHBoxLayout()
         header.setSpacing(2)
 
@@ -89,20 +89,29 @@ class CalendarWidget(QWidget):
             lbl = QLabel(str(day))
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
-            lbl.setStyleSheet("color: white;")
+            lbl.setStyleSheet("color: black; background-color: white;")
             header.addWidget(lbl)
 
         self.root_layout.addLayout(header)
 
-        # ROWS
+        # ===== ROWS =====
         for emp in employees:
             row = QHBoxLayout()
             row.setSpacing(2)
 
+            # ⬅️ ИМЕ – фиксиран редови хедър
             name_lbl = QLabel(emp)
             name_lbl.setFixedSize(self.NAME_COL_WIDTH, self.BUTTON_SIZE)
-            name_lbl.setStyleSheet("color: white; padding-left: 6px;")
-            name_lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+            name_lbl.setAlignment(
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+            )
+            name_lbl.setStyleSheet("""
+                background-color: #f2f2f2;
+                color: black;
+                padding-left: 8px;
+                font-weight: bold;
+                border-right: 2px solid #999;
+            """)
             row.addWidget(name_lbl)
 
             emp_schedule = schedule.get(emp, {})
@@ -157,19 +166,14 @@ class CalendarWidget(QWidget):
     def _make_shift_handler(self, employee, day, shift_code):
         def handler():
             cell = self.day_cells[(employee, day)]
-
             cell.set_shift(
                 shift_code,
                 weekend=(day in self.weekends),
                 holiday=(day in self.holidays),
             )
-
-            # 🔧 FIX 3 — NO reload, ONLY notify
             self.cell_clicked.emit(day, f"{employee}:{shift_code}")
-
         return handler
 
-    # 🔧 FIX 2 — TUP apply_schedule
     def apply_schedule(self, schedule: dict):
         for emp, days in schedule.items():
             for day, shift in days.items():
@@ -180,11 +184,3 @@ class CalendarWidget(QWidget):
                         weekend=(day in self.weekends),
                         holiday=(day in self.holidays),
                     )
-
-
-
-
-
-
-
-
