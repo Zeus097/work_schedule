@@ -5,7 +5,7 @@ import calendar
 class Employee(models.Model):
     full_name = models.CharField(max_length=255, unique=True)
     start_date = models.DateField(null=True, blank=True)
-    end_date = models.DateField(null=True, blank=True)   # <-- ново
+    end_date = models.DateField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -14,7 +14,6 @@ class Employee(models.Model):
 
     def __str__(self):
         return self.full_name
-
 
 
 class AdminEmployee(models.Model):
@@ -31,19 +30,9 @@ class AdminEmployee(models.Model):
 
 
 class MonthRecord(models.Model):
-    """
-    Holds the whole json for the month generator.
-    Example:
-      {
-        "schedule": {...},
-        "meta": {...},
-        ...
-      }
-    """
-
     year = models.PositiveSmallIntegerField()
-    month = models.PositiveSmallIntegerField()  # 1–12
-    data = models.JSONField()  # result from generate_new_month(...)
+    month = models.PositiveSmallIntegerField()
+    data = models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -56,10 +45,4 @@ class MonthRecord(models.Model):
 
     @property
     def label(self) -> str:
-        """Text for UI/admin."""
-
-        month_name = calendar.month_name[self.month]
-        return f"{month_name} {self.year}"
-
-
-
+        return f"{calendar.month_name[self.month]} {self.year}"

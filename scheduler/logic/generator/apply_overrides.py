@@ -1,7 +1,6 @@
 def apply_overrides(schedule, overrides):
     for emp_id, days in overrides.items():
         emp_id = str(emp_id)
-
         if emp_id not in schedule:
             continue
 
@@ -9,5 +8,3 @@ def apply_overrides(schedule, overrides):
             schedule[emp_id][str(day)] = shift
 
     return schedule
-
-

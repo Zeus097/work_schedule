@@ -40,12 +40,18 @@ class APIClient:
         data["schedule"] = normalized_schedule
         return data
 
-    def generate_month(self, year: int, month: int):
-        r = requests.post(
-            f"{self.base}/schedule/generate/",
-            json={"year": year, "month": month}
-        )
-        r.raise_for_status()
+    def generate_month(self, year, month):
+        url = f"{self.base}/schedule/generate/"
+        r = requests.post(url, json={"year": int(year), "month": int(month)})
+
+        if r.status_code >= 400:
+            try:
+                data = r.json()
+                message = data.get("error", {}).get("message", "Грешка при генериране.")
+            except Exception:
+                message = "Грешка при генериране на графика."
+            raise RuntimeError(message)
+
         return r.json()
 
     # -------------------------

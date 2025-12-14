@@ -1,5 +1,6 @@
 import time
 from pathlib import Path
+from datetime import datetime
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QPushButton,
@@ -43,6 +44,8 @@ class MainWindow(QMainWindow):
         self.current_month = None
         self.current_schedule = {}
 
+        self.calendar_widget = CalendarWidget()
+
         self.build_ui()
 
     # =====================================================
@@ -57,9 +60,23 @@ class MainWindow(QMainWindow):
 
         # -------- YEAR --------
         self.year_select = QComboBox()
-        years = self.client.get_years() or [2025, 2026, 2027]
-        for y in years:
+
+        backend_years = self.client.get_years() or []
+        current_year = datetime.now().year
+
+        years = set()
+        for y in backend_years:
+            try:
+                years.add(int(y))
+            except ValueError:
+                pass
+
+        years.add(current_year)
+        years.add(current_year + 1)
+
+        for y in sorted(years):
             self.year_select.addItem(str(y))
+
         grid.addWidget(self.year_select, 1, 0)
 
         # -------- MONTH --------
@@ -88,17 +105,6 @@ class MainWindow(QMainWindow):
 
         export_btn = QPushButton("Експорт в Excel")
         export_btn.clicked.connect(self.export_to_excel)
-        export_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #e6e6e6;
-            color: #000000;
-            border: 1px solid #555;
-            padding: 6px 16px;
-            font-weight: bold;
-        }
-        QPushButton:hover { background-color: #dcdcdc; }
-        QPushButton:pressed { background-color: #cfcfcf; }
-        """)
         export_layout.addWidget(export_btn)
         main_layout.addLayout(export_layout)
 
@@ -116,6 +122,7 @@ class MainWindow(QMainWindow):
         # -------- CALENDAR --------
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        self.scroll.setWidget(self.calendar_widget)
         main_layout.addWidget(self.scroll)
 
         container = QWidget()
@@ -127,55 +134,46 @@ class MainWindow(QMainWindow):
     # =====================================================
     def init_defaults(self):
         if self.year_select.count():
-            self.year_select.setCurrentIndex(0)
+            self.year_select.setCurrentText(str(datetime.now().year))
         if self.month_select.count():
-            self.month_select.setCurrentIndex(11)
+            self.month_select.setCurrentIndex(0)
         self.load_month()
 
     # =====================================================
     def load_month(self):
+        if not hasattr(self, "year_select") or not hasattr(self, "month_select"):
+            return
+
         year = int(self.year_select.currentText())
         month = int(self.month_select.currentText())
-
-        self.current_year = year
-        self.current_month = month
-        self.month_title.setText(MONTH_NAMES[month])
-
-        month_info = self.client.get_month_info(year, month)
-        days = list(range(1, month_info["days"] + 1))
 
         try:
             data = self.client.get_schedule(year, month)
         except FileNotFoundError:
-            self.client.generate_month(year, month)
-            time.sleep(0.1)
-            data = self.client.get_schedule(year, month)
+            try:
+                self.client.generate_month(year, month)
+                data = self.client.get_schedule(year, month)
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Невъзможно генериране",
+                    str(e)
+                )
+                return
 
+        self.current_year = year
+        self.current_month = month
         self.current_schedule = data.get("schedule", {})
-        if not self.current_schedule:
-            return
 
-        self.calendar = CalendarWidget()
-        self.calendar.setup(
-            list(self.current_schedule.keys()),
-            days,
-            self.current_schedule,
-            month_info.get("weekends", []),
-            month_info.get("holidays", [])
-        )
-        self.scroll.setWidget(self.calendar)
+        self.month_title.setText(f"{MONTH_NAMES[month]} {year} г.")
+        self.calendar_widget.load(data)
 
-    # =====================================================
-    # ADMIN
     # =====================================================
     def open_admin(self):
         self.admin_window = AdminWindow(self)
         self.admin_window.current_schedule = self.current_schedule
-        self.admin_window.days_in_month = len(self.calendar.days)
         self.admin_window.show()
 
-    # =====================================================
-    # EMPLOYEES
     # =====================================================
     def open_employees(self):
         dialog = QDialog(self)
@@ -219,15 +217,12 @@ class MainWindow(QMainWindow):
             self.load_month()
 
     # =====================================================
-    # EXPORT
-    # =====================================================
     def export_to_excel(self):
         if not LAST_STATE_FILE.exists():
             QMessageBox.warning(
                 self,
                 "Експортът е блокиран",
-                "Първо трябва да заключиш месеца.\n\n"
-                "Администрация → „Запис (заключи месеца)“"
+                "Първо трябва да заключиш месеца."
             )
             return
 
@@ -265,15 +260,12 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "Успешен експорт",
-                "Excel файлът е създаден успешно и може да се редактира."
+                "Excel файлът е създаден успешно."
             )
 
         except Exception as e:
             QMessageBox.critical(
                 self,
                 "Грешка при експорт",
-                f"Възникна грешка при създаване на файла:\n{e}"
+                str(e)
             )
-
-
-

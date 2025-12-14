@@ -5,7 +5,7 @@ from rest_framework import status
 
 from scheduler.models import Employee
 from scheduler.logic.generator.generator import generate_new_month
-from scheduler.logic.months_logic import load_month, save_month
+from scheduler.logic.months_logic import load_month, save_month, get_latest_month
 from scheduler.logic.generator.apply_overrides import apply_overrides
 
 from scheduler.api.errors import api_error
@@ -14,25 +14,14 @@ from scheduler.api.serializers import (
     EmployeeSerializer,
     EmployeeUpdateSerializer,
 )
-
 from scheduler.api.utils.holidays import get_holidays_for_month
 
 
-# ---------------------------------------------------------
-# MONTH INFO
-# ---------------------------------------------------------
 class MonthInfoView(APIView):
     def get(self, request, year, month):
-        year = int(year)
-        month = int(month)
-
         days_count = calendar.monthrange(year, month)[1]
-
-        weekends = [
-            d for d in range(1, days_count + 1)
-            if calendar.weekday(year, month, d) in (5, 6)
-        ]
-
+        weekends = [d for d in range(1, days_count + 1)
+                    if calendar.weekday(year, month, d) in (5, 6)]
         holidays = get_holidays_for_month(year, month)
 
         return Response({
@@ -44,9 +33,6 @@ class MonthInfoView(APIView):
         })
 
 
-# ---------------------------------------------------------
-# SCHEDULE VIEW
-# ---------------------------------------------------------
 class ScheduleView(APIView):
     def get(self, request, year, month):
         try:
@@ -59,99 +45,111 @@ class ScheduleView(APIView):
                 http_status=status.HTTP_404_NOT_FOUND
             )
 
-        raw_schedule = data["schedule"]
-        overrides = data.get("overrides", {})
-
-
-        schedule_by_id = {}
-        for emp_id, days in raw_schedule.items():
-            schedule_by_id[str(emp_id)] = days
-
-        overrides_by_id = {}
-        for emp_id, days in overrides.items():
-            overrides_by_id[str(emp_id)] = days
-
         return Response({
-            "schedule": schedule_by_id,
-            "overrides": overrides_by_id,
-        }, status=status.HTTP_200_OK)
+            "schedule": data["schedule"],
+            "overrides": data.get("overrides", {}),
+        })
 
 
-# ---------------------------------------------------------
-# GENERATE MONTH
-# ---------------------------------------------------------
 class GenerateMonthView(APIView):
     def post(self, request):
         serializer = GenerateMonthSerializer(data=request.data)
         if not serializer.is_valid():
             return api_error(
                 code="INVALID_INPUT",
-                message="Невалидни параметри за генериране на месец.",
-                hint=str(serializer.errors)
+                message="Невалидни параметри.",
+                hint=str(serializer.errors),
+                http_status=status.HTTP_400_BAD_REQUEST
             )
 
-        year = serializer.validated_data['year']
-        month = serializer.validated_data['month']
+        year = serializer.validated_data["year"]
+        month = serializer.validated_data["month"]
 
-        generated = generate_new_month(year, month)
+        # 1) Проверка: има ли вече файл за месеца
+        try:
+            existing = load_month(year, month)
+            # ако има файл → проверяваме lock
+            if existing.get("generator_locked", False):
+                return api_error(
+                    code="MONTH_LOCKED",
+                    message="Месецът е заключен за повторно генериране.",
+                    hint="Може да се редактира ръчно, но не и да се генерира наново.",
+                    http_status=status.HTTP_409_CONFLICT
+                )
+
+            # ако има файл, но не е заключен – пак не позволяваме регенерация
+            return api_error(
+                code="MONTH_ALREADY_EXISTS",
+                message="Месецът вече съществува.",
+                hint="Използвайте ръчни корекции (override).",
+                http_status=status.HTTP_409_CONFLICT
+            )
+
+        except FileNotFoundError:
+            # файлът НЕ съществува → продължаваме към генериране
+            pass
+
+        # 2) Генериране
+        try:
+            generated = generate_new_month(
+                year=year,
+                month=month
+            )
+        except Exception as e:
+            return api_error(
+                code="GENERATOR_ERROR",
+                message="Грешка при генериране на месец.",
+                hint=str(e),
+                http_status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        # 3) Добавяме generator lock по подразбиране
+        generated["generator_locked"] = True
+
         save_month(year, month, generated)
 
-        return Response({
-            "year": year,
-            "month": month,
-            "generated": True,
-            "data": generated
-        }, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                "year": year,
+                "month": month,
+                "generated": True,
+                "data": generated,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
-# ---------------------------------------------------------
-# EMPLOYEES LIST / CREATE
-# ---------------------------------------------------------
+
+
 class EmployeeListCreateView(APIView):
     def get(self, request):
         employees = Employee.objects.all().order_by("full_name")
-        serializer = EmployeeSerializer(employees, many=True)
-        return Response(serializer.data)
+        return Response(EmployeeSerializer(employees, many=True).data)
 
     def post(self, request):
         serializer = EmployeeSerializer(data=request.data)
-
         if not serializer.is_valid():
             return api_error(
                 code="INVALID_INPUT",
-                message="Невалидни данни за служител.",
+                message="Невалидни данни.",
                 hint=str(serializer.errors)
             )
-
         employee = serializer.save()
         return Response(EmployeeSerializer(employee).data, status=status.HTTP_201_CREATED)
 
 
-# ---------------------------------------------------------
-# EMPLOYEE UPDATE / DELETE
-# ---------------------------------------------------------
 class EmployeeDetailView(APIView):
     def put(self, request, id):
         try:
             employee = Employee.objects.get(id=id)
         except Employee.DoesNotExist:
-            return api_error(
-                code="NOT_FOUND",
-                message="Служителят не е намерен.",
-                hint="Проверете ID-то.",
-                http_status=status.HTTP_404_NOT_FOUND
-            )
+            return api_error("NOT_FOUND", "Служителят не е намерен.")
 
         serializer = EmployeeUpdateSerializer(data=request.data)
         if not serializer.is_valid():
-            return api_error(
-                code="INVALID_INPUT",
-                message="Невалидни данни за редакция.",
-                hint=str(serializer.errors)
-            )
+            return api_error("INVALID_INPUT", "Невалидни данни.", str(serializer.errors))
 
-        data = serializer.validated_data
-        for key, value in data.items():
+        for key, value in serializer.validated_data.items():
             setattr(employee, key, value)
         employee.save()
 
@@ -159,64 +157,31 @@ class EmployeeDetailView(APIView):
 
     def delete(self, request, id):
         try:
-            employee = Employee.objects.get(id=id)
+            Employee.objects.get(id=id).delete()
         except Employee.DoesNotExist:
-            return api_error(
-                code="NOT_FOUND",
-                message="Служителят не е намерен.",
-                hint="Проверете ID-то.",
-                http_status=status.HTTP_404_NOT_FOUND
-            )
-
-        employee.delete()
-        return Response({"status": "deleted"}, status=status.HTTP_204_NO_CONTENT)
+            return api_error("NOT_FOUND", "Служителят не е намерен.")
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-# ---------------------------------------------------------
-# OVERRIDE SCHEDULE
-# ---------------------------------------------------------
 class ScheduleOverrideAPI(APIView):
     def post(self, request, year, month):
-
-        employee_id = request.data.get("employee_id")
+        employee_id = str(request.data.get("employee_id"))
         day = str(request.data.get("day"))
         shift = request.data.get("new_shift")
 
-        if employee_id is None:
-            return api_error(
-                code="MISSING_ID",
-                message="Липсва employee_id.",
-                http_status=status.HTTP_400_BAD_REQUEST
-            )
-
-
-        try:
-            emp = Employee.objects.get(id=int(employee_id))
-        except Employee.DoesNotExist:
-            return api_error(
-                code="INVALID_EMPLOYEE",
-                message=f"Няма служител с ID={employee_id}.",
-                http_status=status.HTTP_400_BAD_REQUEST
-            )
-
-        emp_id = str(emp.id)
-
         data = load_month(year, month)
-
-        if "overrides" not in data:
-            data["overrides"] = {}
-
-        if emp_id not in data["overrides"]:
-            data["overrides"][emp_id] = {}
-
-        data["overrides"][emp_id][day] = shift
-
+        data.setdefault("overrides", {})
+        data["overrides"].setdefault(employee_id, {})
+        data["overrides"][employee_id][day] = shift
 
         data["schedule"] = apply_overrides(data["schedule"], data["overrides"])
-
         save_month(year, month, data)
 
         return Response({"status": "ok", "applied": True})
+
+
+
+
 
 
 
