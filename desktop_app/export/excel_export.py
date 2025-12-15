@@ -1,7 +1,7 @@
+from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
-
 
 DARK_FILL = PatternFill("solid", fgColor="B0B0B0")
 HEADER_FILL = PatternFill("solid", fgColor="E6E6E6")
@@ -13,12 +13,16 @@ THIN_BORDER = Border(
     bottom=Side(style="thin"),
 )
 
+COUNT_AS_WORKED = {"Д", "В", "Н", "А", "О", "Б"}
 
 def export_schedule_to_excel(
     filename: str,
-    title: str,
-    month_label: str,
-    employees: list[str],
+    company: str,          # ТРАКИЯ ГЛАС
+    department: str,       # КАНТАР
+    city: str,             # ТЪРГОВИЩЕ
+    month_name: str,       # МАРТ
+    year: int,             # 2026
+    employees: list[dict], # [{name, card_number?}]
     days: list[int],
     schedule: dict,
     weekends: list[int],
@@ -28,47 +32,96 @@ def export_schedule_to_excel(
     ws = wb.active
     ws.title = "График"
 
-    total_cols = len(days) + 1
+    total_cols = len(days) + 4  # №, дни, име, изработени + карта
 
-    # ===== TITLE =====
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
-    cell = ws.cell(row=1, column=1, value=title)
-    cell.font = Font(size=16, bold=True)
-    cell.alignment = Alignment(horizontal="center")
+    # ===== HEADER BLOCK =====
+    # ред 3 – общ ред за фирма / отдел / град
 
-    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=total_cols)
-    cell = ws.cell(row=2, column=1, value=month_label)
-    cell.font = Font(size=13, bold=True)
-    cell.alignment = Alignment(horizontal="center")
+    # ТРАКИЯ ГЛАС – колона C (над имената)
+    ws.merge_cells(start_row=3, start_column=3, end_row=3, end_column=10)
+    cell = ws.cell(3, 3, company)
+    cell.font = Font(size=14, bold=True)
+    cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    # ===== HEADER =====
-    h = ws.cell(row=4, column=1, value="Служител")
-    h.fill = HEADER_FILL
-    h.border = THIN_BORDER
+    # КАНТАР – център
+    ws.merge_cells(start_row=3, start_column=11, end_row=3, end_column=22)
+    cell = ws.cell(3, 11, department)
+    cell.font = Font(size=15, bold=True)
+    cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    for col, day in enumerate(days, start=2):
-        c = ws.cell(row=4, column=col, value=day)
-        c.alignment = Alignment(horizontal="center")
+    # ТЪРГОВИЩЕ – вдясно
+    ws.merge_cells(start_row=3, start_column=23, end_row=3, end_column=total_cols)
+    cell = ws.cell(3, 23, city)
+    cell.font = Font(size=14, bold=True)
+    cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # ред 4 – месец и година (централно)
+    ws.merge_cells(start_row=4, start_column=1, end_row=4, end_column=total_cols)
+    cell = ws.cell(4, 1, f"{month_name} {year} г.")
+    cell.font = Font(size=12, bold=True)
+    cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # ===== TABLE HEADER =====
+    headers = ["№", "Изр.", "Име, Презиме, Фамилия"]
+    for col, text in enumerate(headers, start=1):
+        c = ws.cell(row=5, column=col, value=text)
         c.fill = HEADER_FILL
         c.border = THIN_BORDER
+        c.alignment = Alignment(horizontal="center")
+
+    for i, day in enumerate(days, start=4):
+        c = ws.cell(row=5, column=i, value=day)
+        c.fill = HEADER_FILL
+        c.border = THIN_BORDER
+        c.alignment = Alignment(horizontal="center")
+
+    last_col = 4 + len(days)
+    ws.cell(row=5, column=last_col, value="Служебен номер")
+    ws.cell(row=5, column=last_col).fill = HEADER_FILL
+    ws.cell(row=5, column=last_col).border = THIN_BORDER
+    ws.cell(row=5, column=last_col).alignment = Alignment(horizontal="center")
 
     # ===== BODY =====
-    for row, name in enumerate(employees, start=5):
-        ws.cell(row=row, column=1, value=name).border = THIN_BORDER
+    for idx, emp in enumerate(employees, start=1):
+        row = 5 + idx
+        name = emp["name"]
+        card = emp.get("card_number", "")
 
         emp_days = schedule.get(name, {})
-        for col, day in enumerate(days, start=2):
+
+        worked_days = sum(
+            1 for d in days if emp_days.get(d, "") in COUNT_AS_WORKED
+        )
+
+        ws.cell(row=row, column=1, value=idx).border = THIN_BORDER
+        ws.cell(row=row, column=2, value=worked_days).border = THIN_BORDER
+        ws.cell(row=row, column=3, value=name).border = THIN_BORDER
+
+        for i, day in enumerate(days, start=4):
             val = emp_days.get(day, "")
-            cell = ws.cell(row=row, column=col, value=val)
-            cell.alignment = Alignment(horizontal="center")
-            cell.border = THIN_BORDER
+            c = ws.cell(row=row, column=i, value=val)
+            c.alignment = Alignment(horizontal="center")
+            c.border = THIN_BORDER
 
             if day in weekends or day in holidays:
-                cell.fill = DARK_FILL
+                c.fill = DARK_FILL
 
-    # ===== SIZES =====
-    ws.column_dimensions["A"].width = 28
-    for col in range(2, total_cols + 1):
+        ws.cell(row=row, column=last_col, value=card).border = THIN_BORDER
+
+    # ===== WIDTHS =====
+    ws.column_dimensions["A"].width = 5
+    ws.column_dimensions["B"].width = 6
+    ws.column_dimensions["C"].width = 30
+
+    for col in range(4, last_col):
         ws.column_dimensions[get_column_letter(col)].width = 4
 
+    ws.column_dimensions[get_column_letter(last_col)].width = 14
+
     wb.save(filename)
+
+
+
+
+
+
