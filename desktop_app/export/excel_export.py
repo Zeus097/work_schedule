@@ -1,10 +1,24 @@
 from pathlib import Path
+from datetime import date
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
-DARK_FILL = PatternFill("solid", fgColor="B0B0B0")
+from scheduler.api.utils.holidays import get_holidays_for_month
+
+
+# === FILLS ===
+RED_FILL = PatternFill("solid", fgColor="FF6666")     # уикенд / празник
+GREEN_FILL = PatternFill("solid", fgColor="99CC66")  # работен ден
 HEADER_FILL = PatternFill("solid", fgColor="E6E6E6")
+
+EMPLOYEE_ROW_FILLS = [
+    PatternFill("solid", fgColor="FFD966"),
+    PatternFill("solid", fgColor="F4B084"),
+    PatternFill("solid", fgColor="9BC2E6"),
+    PatternFill("solid", fgColor="A9D18E"),
+    PatternFill("solid", fgColor="C5E0B4"),
+]
 
 THIN_BORDER = Border(
     left=Side(style="thin"),
@@ -15,51 +29,45 @@ THIN_BORDER = Border(
 
 COUNT_AS_WORKED = {"Д", "В", "Н", "А", "О", "Б"}
 
+
 def export_schedule_to_excel(
     filename: str,
-    company: str,          # ТРАКИЯ ГЛАС
-    department: str,       # КАНТАР
-    city: str,             # ТЪРГОВИЩЕ
-    month_name: str,       # МАРТ
-    year: int,             # 2026
-    employees: list[dict], # [{name, card_number?}]
+    company: str,
+    department: str,
+    city: str,
+    month_name: str,
+    month: int,            # ⬅️ ВАЖНО
+    year: int,
+    employees: list[dict],
     days: list[int],
     schedule: dict,
-    weekends: list[int],
-    holidays: list[int],
 ):
     wb = Workbook()
     ws = wb.active
     ws.title = "График"
 
-    total_cols = len(days) + 4  # №, дни, име, изработени + карта
+    holidays = set(get_holidays_for_month(year, month))
 
-    # ===== HEADER BLOCK =====
-    # ред 3 – общ ред за фирма / отдел / град
+    first_day_col = 4
+    last_day_col = first_day_col + len(days) - 1
+    service_col = last_day_col + 1
 
-    # ТРАКИЯ ГЛАС – колона C (над имената)
+    # ===== HEADER =====
     ws.merge_cells(start_row=3, start_column=3, end_row=3, end_column=10)
-    cell = ws.cell(3, 3, company)
-    cell.font = Font(size=14, bold=True)
-    cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.cell(3, 3, company).font = Font(size=14, bold=True)
+    ws.cell(3, 3).alignment = Alignment(horizontal="center")
 
-    # КАНТАР – център
     ws.merge_cells(start_row=3, start_column=11, end_row=3, end_column=22)
-    cell = ws.cell(3, 11, department)
-    cell.font = Font(size=15, bold=True)
-    cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.cell(3, 11, department).font = Font(size=16, bold=True)
+    ws.cell(3, 11).alignment = Alignment(horizontal="center")
 
-    # ТЪРГОВИЩЕ – вдясно
-    ws.merge_cells(start_row=3, start_column=23, end_row=3, end_column=total_cols)
-    cell = ws.cell(3, 23, city)
-    cell.font = Font(size=14, bold=True)
-    cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.merge_cells(start_row=3, start_column=23, end_row=3, end_column=service_col)
+    ws.cell(3, 23, city).font = Font(size=14, bold=True)
+    ws.cell(3, 23).alignment = Alignment(horizontal="center")
 
-    # ред 4 – месец и година (централно)
-    ws.merge_cells(start_row=4, start_column=1, end_row=4, end_column=total_cols)
-    cell = ws.cell(4, 1, f"{month_name} {year} г.")
-    cell.font = Font(size=12, bold=True)
-    cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.merge_cells(start_row=4, start_column=1, end_row=4, end_column=service_col)
+    ws.cell(4, 1, f"{month_name} {year} г.").font = Font(size=12, bold=True)
+    ws.cell(4, 1).alignment = Alignment(horizontal="center")
 
     # ===== TABLE HEADER =====
     headers = ["№", "Изр.", "Име, Презиме, Фамилия"]
@@ -69,54 +77,72 @@ def export_schedule_to_excel(
         c.border = THIN_BORDER
         c.alignment = Alignment(horizontal="center")
 
-    for i, day in enumerate(days, start=4):
-        c = ws.cell(row=5, column=i, value=day)
-        c.fill = HEADER_FILL
+    # === ЦИФРИТЕ НА ДНИТЕ (САМО ТЕ СА ОЦВЕТЕНИ) ===
+    for idx, day in enumerate(days):
+        col = first_day_col + idx
+        c = ws.cell(row=5, column=col, value=day)
         c.border = THIN_BORDER
         c.alignment = Alignment(horizontal="center")
 
-    last_col = 4 + len(days)
-    ws.cell(row=5, column=last_col, value="Служебен номер")
-    ws.cell(row=5, column=last_col).fill = HEADER_FILL
-    ws.cell(row=5, column=last_col).border = THIN_BORDER
-    ws.cell(row=5, column=last_col).alignment = Alignment(horizontal="center")
+        weekday = date(year, month, day).weekday()  # 0=Понеделник
+        if weekday >= 5 or day in holidays:
+            c.fill = RED_FILL
+        else:
+            c.fill = GREEN_FILL
+
+    ws.cell(row=5, column=service_col, value="Служебен номер").fill = HEADER_FILL
+    ws.cell(row=5, column=service_col).border = THIN_BORDER
+    ws.cell(row=5, column=service_col).alignment = Alignment(horizontal="center")
 
     # ===== BODY =====
-    for idx, emp in enumerate(employees, start=1):
-        row = 5 + idx
+    for idx, emp in enumerate(employees):
+        row = 6 + idx
         name = emp["name"]
         card = emp.get("card_number", "")
-
         emp_days = schedule.get(name, {})
 
-        worked_days = sum(
-            1 for d in days if emp_days.get(d, "") in COUNT_AS_WORKED
-        )
+        worked_days = sum(1 for d in days if emp_days.get(d, "") in COUNT_AS_WORKED)
+        fill = EMPLOYEE_ROW_FILLS[idx % len(EMPLOYEE_ROW_FILLS)]
 
-        ws.cell(row=row, column=1, value=idx).border = THIN_BORDER
+        ws.cell(row=row, column=1, value=idx + 1).border = THIN_BORDER
         ws.cell(row=row, column=2, value=worked_days).border = THIN_BORDER
         ws.cell(row=row, column=3, value=name).border = THIN_BORDER
+        ws.cell(row=row, column=3).fill = fill
 
-        for i, day in enumerate(days, start=4):
+        for i, day in enumerate(days):
+            col = first_day_col + i
             val = emp_days.get(day, "")
-            c = ws.cell(row=row, column=i, value=val)
-            c.alignment = Alignment(horizontal="center")
+            c = ws.cell(row=row, column=col, value=val)
             c.border = THIN_BORDER
+            c.alignment = Alignment(horizontal="center")
 
-            if day in weekends or day in holidays:
-                c.fill = DARK_FILL
+        ws.cell(row=row, column=service_col, value=card).border = THIN_BORDER
 
-        ws.cell(row=row, column=last_col, value=card).border = THIN_BORDER
+    # ===== LEGEND =====
+    legend_row = row + 3
+    ws.cell(legend_row, 3, "ЛЕГЕНДА:").font = Font(bold=True)
+
+    legend = [
+        "Д – ДНЕВНА СМЯНА (08:00 – 16:00)",
+        "В – ВТОРА СМЯНА (16:00 – 24:00)",
+        "Н – НОЩНА СМЯНА (00:00 – 08:00)",
+        "ПРАЗЕН КВАДРАТ – ПОЧИВЕН ДЕН",
+        "О – ОТПУСК",
+        "Б – БОЛНИЧЕН",
+    ]
+
+    for i, text in enumerate(legend, start=1):
+        ws.cell(legend_row + i, 3, text)
 
     # ===== WIDTHS =====
     ws.column_dimensions["A"].width = 5
     ws.column_dimensions["B"].width = 6
-    ws.column_dimensions["C"].width = 30
+    ws.column_dimensions["C"].width = 32
 
-    for col in range(4, last_col):
+    for col in range(first_day_col, service_col):
         ws.column_dimensions[get_column_letter(col)].width = 4
 
-    ws.column_dimensions[get_column_letter(last_col)].width = 14
+    ws.column_dimensions[get_column_letter(service_col)].width = 16
 
     wb.save(filename)
 
