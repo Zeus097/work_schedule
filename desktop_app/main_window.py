@@ -14,6 +14,7 @@ from calendar_widget import CalendarWidget
 from employees_widget import EmployeesWidget
 from desktop_app.ui.admin.admin_window import AdminWindow
 from export.excel_export import export_schedule_to_excel
+from desktop_app.ui.admin.month_close import is_month_closed
 
 
 # ===== PATHS =====
@@ -43,6 +44,8 @@ class MainWindow(QMainWindow):
         self.current_year = None
         self.current_month = None
         self.current_schedule = {}
+
+        self.is_locked = False  # 🔒 ЦЕНТРАЛНО СЪСТОЯНИЕ
 
         self.calendar_widget = CalendarWidget()
 
@@ -96,6 +99,12 @@ class MainWindow(QMainWindow):
         admin_btn = QPushButton("Администрация")
         admin_btn.clicked.connect(self.open_admin)
         grid.addWidget(admin_btn, 2, 1)
+
+        # 🔒 LOCK STATUS LABEL
+        self.lock_status_label = QLabel("")
+        self.lock_status_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.lock_status_label.setStyleSheet("font-weight: bold;")
+        grid.addWidget(self.lock_status_label, 2, 2)
 
         main_layout.addLayout(grid)
 
@@ -165,8 +174,21 @@ class MainWindow(QMainWindow):
         self.current_month = month
         self.current_schedule = data.get("schedule", {})
 
+        # 🔒 ПРОВЕРКА ЗА LOCK
+        self.is_locked = is_month_closed(year, month)
+        self._update_lock_label()
+
         self.month_title.setText(f"{MONTH_NAMES[month]} {year} г.")
         self.calendar_widget.load(data)
+
+    # =====================================================
+    def _update_lock_label(self):
+        if self.is_locked:
+            self.lock_status_label.setText("🔒 Месецът е ЗАКЛЮЧЕН")
+            self.lock_status_label.setStyleSheet("color: red; font-weight: bold;")
+        else:
+            self.lock_status_label.setText("🔓 Месецът е ОТВОРЕН")
+            self.lock_status_label.setStyleSheet("color: green; font-weight: bold;")
 
     # =====================================================
     def open_admin(self):

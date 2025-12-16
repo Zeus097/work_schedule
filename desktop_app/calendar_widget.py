@@ -44,7 +44,7 @@ class CalendarWidget(QWidget):
     cell_clicked = pyqtSignal(int, str)
 
     BUTTON_SIZE = 34
-    NAME_COL_WIDTH = 240  # ⬅️ по-широка колона за имена
+    NAME_COL_WIDTH = 240
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -61,6 +61,24 @@ class CalendarWidget(QWidget):
         self.holidays = []
         self.employees = []
 
+        self.read_only = False  # ⬅️ ще го ползваме в следващата стъпка
+
+    # =====================================================
+    # ADAPTER — MainWindow expects .load(data)
+    # =====================================================
+    def load(self, data: dict):
+        """
+        Adapter метод, за да не пипаме MainWindow.
+        """
+        self.setup(
+            employees=list(data.get("schedule", {}).keys()),
+            days=list(range(1, data.get("days", 0) + 1)),
+            schedule=data.get("schedule", {}),
+            weekends=data.get("weekends", []),
+            holidays=data.get("holidays", []),
+        )
+
+    # =====================================================
     def clear(self):
         while self.root_layout.count():
             item = self.root_layout.takeAt(0)
@@ -99,7 +117,6 @@ class CalendarWidget(QWidget):
             row = QHBoxLayout()
             row.setSpacing(2)
 
-            # ⬅️ ИМЕ – фиксиран редови хедър
             name_lbl = QLabel(emp)
             name_lbl.setFixedSize(self.NAME_COL_WIDTH, self.BUTTON_SIZE)
             name_lbl.setAlignment(
@@ -139,8 +156,11 @@ class CalendarWidget(QWidget):
         self.adjustSize()
         self.updateGeometry()
 
+    # =====================================================
     def _make_cell_click_handler(self, employee, day):
         def handler():
+            if self.read_only:
+                return
             self._open_shift_menu(employee, day)
         return handler
 
@@ -174,6 +194,7 @@ class CalendarWidget(QWidget):
             self.cell_clicked.emit(day, f"{employee}:{shift_code}")
         return handler
 
+    # =====================================================
     def apply_schedule(self, schedule: dict):
         for emp, days in schedule.items():
             for day, shift in days.items():
