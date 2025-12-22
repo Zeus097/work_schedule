@@ -4,6 +4,12 @@ import calendar
 
 class Employee(models.Model):
     full_name = models.CharField(max_length=255, unique=True)
+    card_number = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True
+    )
+
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     is_active = models.BooleanField(default=True)

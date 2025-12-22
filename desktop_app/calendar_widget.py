@@ -1,207 +1,218 @@
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Set
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QBrush
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QMenu, QSizePolicy
+    QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem,
+    QComboBox, QSizePolicy, QHeaderView
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QMouseEvent
+
+SHIFT_OPTIONS = ["", "Д", "В", "Н", "А", "О", "Б"]
+COUNT_AS_WORKED: Set[str] = {"Д", "В", "Н", "А", "О", "Б"}
+
+DAY_GREEN = QColor(160, 215, 140)
+DAY_RED = QColor(235, 120, 120)
+NAME_BG = QColor(210, 210, 210)
+GRID_BG = QColor(45, 45, 45)
+CELL_BG = QColor(55, 55, 55)
+TEXT_LIGHT = QColor(240, 240, 240)
+TEXT_DARK = QColor(0, 0, 0)
 
 
-SHIFT_COLORS = {
-    "Д": "background-color: #4da6ff; border: 1px solid #1f5f99; color: black;",
-    "Н": "background-color: #b36bff; border: 1px solid #6b2fb3; color: black;",
-    "В": "background-color: #ff6b6b; border: 1px solid #a83232; color: black;",
-    "П": "background-color: #63d471; border: 1px solid #2b8a3e; color: black;",
-    "":  "background-color: white; border: 1px solid #ccc; color: black;",
-}
-
-
-class ClickableLabel(QLabel):
-    clicked = pyqtSignal()
-
-    def set_shift(self, value: str, weekend=False, holiday=False):
-        self.setText(value)
-
-        if value == "":
-            if holiday:
-                self.setStyleSheet(
-                    "background-color: #d0d0d0; border: 1px solid #999; color: black;"
-                )
-                return
-            if weekend:
-                self.setStyleSheet(
-                    "background-color: #bfbfbf; border: 1px solid #888; color: black;"
-                )
-                return
-
-        self.setStyleSheet(SHIFT_COLORS.get(value, SHIFT_COLORS[""]))
-
-    def mousePressEvent(self, event: QMouseEvent):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit()
+@dataclass
+class EmpRow:
+    full_name: str
+    emp_id: int
+    card_number: str
 
 
 class CalendarWidget(QWidget):
-    cell_clicked = pyqtSignal(int, str)
+    def __init__(self):
+        super().__init__()
 
-    BUTTON_SIZE = 34
-    NAME_COL_WIDTH = 240
+        self.client = None
+        self.year: Optional[int] = None
+        self.month: Optional[int] = None
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+        self._read_only = True
+        self._override_mode = False
 
-        self.root_layout = QVBoxLayout(self)
-        self.root_layout.setContentsMargins(10, 10, 10, 10)
-        self.root_layout.setSpacing(2)
+        self._employees: List[EmpRow] = []
+        self._schedule: Dict[str, Dict[int, str]] = {}
+        self._days: List[int] = []
+        self._weekends: Set[int] = set()
+        self._holidays: Set[int] = set()
 
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        self.day_cells = {}
-        self.days = []
-        self.weekends = []
-        self.holidays = []
-        self.employees = []
+        self.table = QTableWidget()
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
+        self.table.setStyleSheet("QTableWidget { background-color: #2d2d2d; }")
 
-        self.read_only = False  # ⬅️ ще го ползваме в следващата стъпка
+        layout.addWidget(self.table)
+
+        self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
     # =====================================================
-    # ADAPTER — MainWindow expects .load(data)
+    def set_context(self, client, year: int, month: int):
+        self.client = client
+        self.year = year
+        self.month = month
+
+    def set_read_only(self, read_only: bool):
+        self._read_only = read_only
+        self._render()
+
+    def set_override_mode(self, enabled: bool):
+        self._override_mode = enabled
+        self._render()
+
     # =====================================================
     def load(self, data: dict):
-        """
-        Adapter метод, за да не пипаме MainWindow.
-        """
-        self.setup(
-            employees=list(data.get("schedule", {}).keys()),
-            days=list(range(1, data.get("days", 0) + 1)),
-            schedule=data.get("schedule", {}),
-            weekends=data.get("weekends", []),
-            holidays=data.get("holidays", []),
-        )
+        if not self.client:
+            return
 
-    # =====================================================
-    def clear(self):
-        while self.root_layout.count():
-            item = self.root_layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-        self.day_cells.clear()
 
-    def setup(self, employees, days, schedule, weekends, holidays):
-        self.clear()
+        raw = sorted(self.client.get_employees(), key=lambda x: x["full_name"])
 
-        self.employees = employees
-        self.days = days
-        self.weekends = weekends
-        self.holidays = holidays
-
-        # ===== HEADER =====
-        header = QHBoxLayout()
-        header.setSpacing(2)
-
-        spacer = QLabel("")
-        spacer.setFixedWidth(self.NAME_COL_WIDTH)
-        header.addWidget(spacer)
-
-        for day in days:
-            lbl = QLabel(str(day))
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
-            lbl.setStyleSheet("color: black; background-color: white;")
-            header.addWidget(lbl)
-
-        self.root_layout.addLayout(header)
-
-        # ===== ROWS =====
-        for emp in employees:
-            row = QHBoxLayout()
-            row.setSpacing(2)
-
-            name_lbl = QLabel(emp)
-            name_lbl.setFixedSize(self.NAME_COL_WIDTH, self.BUTTON_SIZE)
-            name_lbl.setAlignment(
-                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+        self._employees = [
+            EmpRow(
+                full_name=e["full_name"],
+                emp_id=str(e["id"]),
+                card_number=str(e.get("card_number") or "")
             )
-            name_lbl.setStyleSheet("""
-                background-color: #f2f2f2;
-                color: black;
-                padding-left: 8px;
-                font-weight: bold;
-                border-right: 2px solid #999;
-            """)
-            row.addWidget(name_lbl)
+            for e in raw
+        ]
 
-            emp_schedule = schedule.get(emp, {})
+        valid_ids = {e.emp_id for e in self._employees}
 
-            for day in days:
-                shift = emp_schedule.get(day, "")
 
-                cell = ClickableLabel(shift)
-                cell.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                cell.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
+        raw_schedule = data.get("schedule", {}) or {}
 
-                cell.set_shift(
-                    shift,
-                    weekend=(day in weekends),
-                    holiday=(day in holidays),
-                )
+        self._schedule = {
+            emp_id: days
+            for emp_id, days in raw_schedule.items()
+            if str(emp_id) in valid_ids
+        }
 
-                cell.clicked.connect(self._make_cell_click_handler(emp, day))
 
-                self.day_cells[(emp, day)] = cell
-                row.addWidget(cell)
+        info = self.client.get_month_info(self.year, self.month)
+        self._days = list(range(1, int(info["days"]) + 1))
+        self._weekends = set(info.get("weekends", []))
+        self._holidays = set(info.get("holidays", []))
 
-            self.root_layout.addLayout(row)
-
-        self.adjustSize()
-        self.updateGeometry()
+        self._render()
 
     # =====================================================
-    def _make_cell_click_handler(self, employee, day):
-        def handler():
-            if self.read_only:
+    def _render(self):
+        rows = len(self._employees)
+        cols = 3 + len(self._days) + 1
+
+        self.table.clear()
+        self.table.setRowCount(rows + 1)
+        self.table.setColumnCount(cols)
+
+        headers = ["№", "Бр.", "Служител"] + [str(d) for d in self._days] + ["Служебен №"]
+        self.table.setHorizontalHeaderLabels(headers)
+
+        self._paint_day_header()
+
+        for i, emp in enumerate(self._employees):
+            r = i + 1
+
+            self._cell(r, 0, str(i + 1), center=True)
+            self._cell(r, 1, str(self._count_worked(str(emp.emp_id))), center=True)
+            self._cell(r, 2, emp.full_name, bg=NAME_BG, fg=TEXT_DARK, bold=True)
+
+            for j, day in enumerate(self._days):
+                col = 3 + j
+                val = self._schedule.get(str(emp.emp_id), {}).get(day, "")
+
+                if self._override_mode and not self._read_only:
+                    self.table.setCellWidget(r, col, self._combo(emp, day, val))
+                else:
+                    self._cell(r, col, val, center=True)
+
+            self._cell(r, cols - 1, emp.card_number, center=True)
+
+        self.table.resizeColumnsToContents()
+        self.table.resizeRowsToContents()
+
+    # =====================================================
+    def _paint_day_header(self):
+        for col in range(self.table.columnCount()):
+            it = QTableWidgetItem("")
+            it.setFlags(Qt.ItemFlag.ItemIsEnabled)
+
+            if 3 <= col < self.table.columnCount() - 1:
+                day = int(self.table.horizontalHeaderItem(col).text())
+                it.setBackground(QBrush(DAY_RED if day in self._weekends or day in self._holidays else DAY_GREEN))
+            else:
+                it.setBackground(QBrush(GRID_BG))
+
+            self.table.setItem(0, col, it)
+
+    # =====================================================
+    def _combo(self, emp: EmpRow, day: int, current: str) -> QComboBox:
+        cb = QComboBox()
+        cb.addItems(SHIFT_OPTIONS)
+        cb.blockSignals(True)
+        cb.setCurrentText(current)
+        cb.blockSignals(False)
+
+        def on_change():
+            new = cb.currentText()
+            if new == current:
                 return
-            self._open_shift_menu(employee, day)
-        return handler
 
-    def _open_shift_menu(self, employee, day):
-        cell = self.day_cells[(employee, day)]
-        menu = QMenu(self)
+            self.client.post_override(self.year, self.month, {
+                "employee_id": emp.emp_id,
+                "day": day,
+                "new_shift": new
+            })
 
-        for code, label in {
-            "": "—",
-            "Д": "Дневна",
-            "Н": "Нощна",
-            "В": "Втора",
-            "П": "Админ",
-        }.items():
-            action = QAction(label, self)
-            action.triggered.connect(
-                self._make_shift_handler(employee, day, code)
-            )
-            menu.addAction(action)
+            self._schedule.setdefault(emp.full_name, {})[day] = new
+            self._cell(self._row(emp.full_name), 1, str(self._count_worked(emp.full_name)), center=True)
 
-        menu.exec(cell.mapToGlobal(cell.rect().bottomLeft()))
-
-    def _make_shift_handler(self, employee, day, shift_code):
-        def handler():
-            cell = self.day_cells[(employee, day)]
-            cell.set_shift(
-                shift_code,
-                weekend=(day in self.weekends),
-                holiday=(day in self.holidays),
-            )
-            self.cell_clicked.emit(day, f"{employee}:{shift_code}")
-        return handler
+        cb.currentIndexChanged.connect(lambda _: on_change())
+        return cb
 
     # =====================================================
-    def apply_schedule(self, schedule: dict):
-        for emp, days in schedule.items():
-            for day, shift in days.items():
-                cell = self.day_cells.get((emp, day))
-                if cell:
-                    cell.set_shift(
-                        shift,
-                        weekend=(day in self.weekends),
-                        holiday=(day in self.holidays),
-                    )
+    def _row(self, name: str) -> int:
+        for i, e in enumerate(self._employees):
+            if e.full_name == name:
+                return i + 1
+        return 1
+
+    def _count_worked(self, emp_id: str) -> int:
+        days = self._schedule.get(str(emp_id), {})
+        return sum(1 for d in self._days if days.get(d) in COUNT_AS_WORKED)
+
+    def _cell(self, r, c, text, bg=None, fg=None, bold=False, center=False):
+        it = QTableWidgetItem(str(text))
+        it.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        if center:
+            it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        if bold:
+            f = it.font()
+            f.setBold(True)
+            it.setFont(f)
+        it.setBackground(QBrush(bg or CELL_BG))
+        it.setForeground(QBrush(fg or TEXT_LIGHT))
+        self.table.setItem(r, c, it)
+
+    def clear(self):
+        self._schedule = {}
+        self._employees = []
+        self._days = []
+        self._weekends = set()
+        self._holidays = set()
+        self.table.clear()
+        self.table.setRowCount(0)
+        self.table.setColumnCount(0)

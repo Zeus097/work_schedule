@@ -1,26 +1,20 @@
 from __future__ import annotations
+
 import calendar
 from collections import deque
 
 from scheduler.models import Employee, AdminEmployee
-from scheduler.logic.file_paths import DATA_DIR
-from scheduler.logic.json_help_functions import (
-    _save_json_with_lock,
-    load_cycle_state,
-    save_cycle_state,
-)
 from scheduler.api.utils.holidays import get_holidays_for_month
+from scheduler.logic.cycle_state import load_last_cycle_state
 
 CYR = {"D": "Д", "V": "В", "N": "Н", "A": "А", "O": ""}
 
-# 🔁 ПРАВИЛЕН цикъл:
-# 4N → 2O → 4V → 1O → 4D → 1O
+
 CYCLE = (
     ["N"] * 4 + ["O", "O"] +
     ["V"] * 4 + ["O"] +
     ["D"] * 4 + ["O"]
 )
-
 CYCLE_LEN = len(CYCLE)
 
 
@@ -30,69 +24,77 @@ def _init_stack(start_index: int) -> deque:
     return d
 
 
-def generate_new_month(year: int, month: int):
+def generate_new_month(year: int, month: int) -> dict:
     _, days_in_month = calendar.monthrange(year, month)
     holidays = set(get_holidays_for_month(year, month))
 
-    # -------- служители --------
-    employees = list(
-        Employee.objects.filter(is_active=True)
-        .order_by("full_name")
-        .values_list("full_name", flat=True)
-    )
 
     admin_qs = AdminEmployee.objects.select_related("employee").first()
-    admin = admin_qs.employee.full_name if admin_qs else None
+    if not admin_qs:
+        raise RuntimeError("Няма зададен администратор.")
 
-    if not admin or len(employees) < 4:
-        raise RuntimeError(
-            "Невъзможно генериране: нужни са минимум 5 служителя "
-            "(1 администратор + 4 ротационни)."
-        )
+    admin_id = str(admin_qs.employee.id)
 
-    # -------- cycle state --------
-    cycle_state = load_cycle_state()
 
-    stacks = {}
-    for name in employees:
-        start_index = cycle_state.get(name, {}).get("cycle_index", 0)
-        stacks[name] = _init_stack(start_index)
-
-    # -------- график --------
-    schedule = {
-        name: {d: "" for d in range(1, days_in_month + 1)}
-        for name in employees + [admin]
+    employees = {
+        str(e["id"]): e["full_name"]
+        for e in Employee.objects.filter(is_active=True)
+        .values("id", "full_name")
     }
 
-    # -------- администратор --------
+    if admin_id not in employees:
+        raise RuntimeError("Администраторът не е активен служител.")
+
+    rotational_ids = [eid for eid in employees if eid != admin_id]
+
+    if len(rotational_ids) < 4:
+        raise RuntimeError("Нужни са минимум 4 ротационни + 1 администратор.")
+
+
+    cycle_state = load_last_cycle_state() or {}
+    bootstrap = not cycle_state
+
+    stacks = {}
+    for emp_id in rotational_ids:
+        if emp_id in cycle_state:
+            start_index = int(cycle_state[emp_id]["cycle_index"])
+        else:
+            start_index = 0
+
+        stacks[emp_id] = _init_stack(start_index)
+
+
+    schedule = {
+        emp_id: {d: "" for d in range(1, days_in_month + 1)}
+        for emp_id in rotational_ids + [admin_id]
+    }
+
+
     for day in range(1, days_in_month + 1):
         if calendar.weekday(year, month, day) < 5 and day not in holidays:
-            schedule[admin][day] = "А"
+            schedule[admin_id][day] = "А"
 
-    # -------- основен цикъл --------
+
     for day in range(1, days_in_month + 1):
         required = ["D", "V", "N"]
-        used_today = set()
-
-        if schedule[admin][day] == "А":
-            used_today.add(admin)
+        used_today = {admin_id} if schedule[admin_id][day] == "А" else set()
 
         for shift in required:
             assigned = False
 
-            for name in employees:
-                if name in used_today:
+            for emp_id in rotational_ids:
+                if emp_id in used_today:
                     continue
 
-                stack = stacks[name]
+                stack = stacks[emp_id]
 
                 for _ in range(CYCLE_LEN):
                     code = stack[0]
                     stack.rotate(-1)
 
                     if code == shift:
-                        schedule[name][day] = CYR[code]
-                        used_today.add(name)
+                        schedule[emp_id][day] = CYR[code]
+                        used_today.add(emp_id)
                         assigned = True
                         break
 
@@ -100,33 +102,11 @@ def generate_new_month(year: int, month: int):
                     break
 
             if not assigned:
-                raise RuntimeError(
-                    f"Невъзможно покритие за {shift} на ден {day}"
-                )
-
-    # -------- save cycle state --------
-    new_cycle_state = {}
-    for name, stack in stacks.items():
-        # колко позиции сме изминали от началото
-        index = (-stack.index(CYCLE[0])) % CYCLE_LEN if CYCLE[0] in stack else 0
-        new_cycle_state[name] = {
-            "cycle_index": index,
-            "last_date": f"{year}-{month:02d}-{days_in_month:02d}",
-        }
-
-    save_cycle_state(new_cycle_state)
-
-    # -------- запис --------
-    path = DATA_DIR / f"{year}-{month:02d}.json"
-    _save_json_with_lock(path, {
-        "year": year,
-        "month": month,
-        "schedule": schedule,
-        "overrides": {},
-        "generator_locked": True,
-    })
+                raise RuntimeError(f"Невъзможно покритие за {shift} на ден {day}")
 
     return {
+        "year": year,
+        "month": month,
         "schedule": schedule,
         "overrides": {},
         "generator_locked": True,
