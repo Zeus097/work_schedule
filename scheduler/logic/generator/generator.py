@@ -2,40 +2,51 @@ from __future__ import annotations
 
 import calendar
 from collections import deque
+from typing import Dict
 
 from scheduler.models import Employee, AdminEmployee
-from scheduler.api.utils.holidays import get_holidays_for_month
 from scheduler.logic.cycle_state import load_last_cycle_state
+from scheduler.api.utils.holidays import get_holidays_for_month
 
-CYR = {"D": "Д", "V": "В", "N": "Н", "A": "А", "O": ""}
 
+# ===============================
+# 1️⃣ ЦИКЪЛ НА СМЕНИТЕ (ЧОВЕШКИ)
+# ===============================
 
-CYCLE = (
-    ["N"] * 4 + ["O", "O"] +
-    ["V"] * 4 + ["O"] +
-    ["D"] * 4 + ["O"]
-)
+CYCLE = [
+    "Д", "Д", "Д", "Д",
+    "",
+    "В", "В", "В", "В",
+    "",
+    "Н", "Н", "Н", "Н",
+    "", ""
+]
+
 CYCLE_LEN = len(CYCLE)
 
 
-def _init_stack(start_index: int) -> deque:
-    d = deque(CYCLE)
-    d.rotate(-start_index)
-    return d
+def _build_cycle(start_index: int) -> deque:
+    dq = deque(CYCLE)
+    dq.rotate(-start_index)
+    return dq
 
+
+# ===============================
+# 2️⃣ ГЕНЕРАТОР
+# ===============================
 
 def generate_new_month(year: int, month: int) -> dict:
     _, days_in_month = calendar.monthrange(year, month)
     holidays = set(get_holidays_for_month(year, month))
 
-
-    admin_qs = AdminEmployee.objects.select_related("employee").first()
-    if not admin_qs:
+    # ---------- администратор ----------
+    admin_rel = AdminEmployee.objects.select_related("employee").first()
+    if not admin_rel:
         raise RuntimeError("Няма зададен администратор.")
 
-    admin_id = str(admin_qs.employee.id)
+    admin_id = str(admin_rel.employee.id)
 
-
+    # ---------- служители ----------
     employees = {
         str(e["id"]): e["full_name"]
         for e in Employee.objects.filter(is_active=True)
@@ -45,64 +56,61 @@ def generate_new_month(year: int, month: int) -> dict:
     if admin_id not in employees:
         raise RuntimeError("Администраторът не е активен служител.")
 
-    rotational_ids = [eid for eid in employees if eid != admin_id]
+    workers = [eid for eid in employees if eid != admin_id]
 
-    if len(rotational_ids) < 4:
-        raise RuntimeError("Нужни са минимум 4 ротационни + 1 администратор.")
+    if len(workers) < 4:
+        raise RuntimeError("Нужни са минимум 4 ротационни служители.")
 
+    # ---------- cycle state ----------
+    last_state = load_last_cycle_state() or {}
 
-    cycle_state = load_last_cycle_state() or {}
-    bootstrap = not cycle_state
+    cycles: Dict[str, deque] = {}
+    for i, emp_id in enumerate(workers):
+        start_index = last_state.get(emp_id, {}).get("cycle_index", i * 4)
+        cycles[emp_id] = _build_cycle(start_index % CYCLE_LEN)
 
-    stacks = {}
-    for emp_id in rotational_ids:
-        if emp_id in cycle_state:
-            start_index = int(cycle_state[emp_id]["cycle_index"])
-        else:
-            start_index = 0
-
-        stacks[emp_id] = _init_stack(start_index)
-
-
+    # ---------- празен график ----------
     schedule = {
-        emp_id: {d: "" for d in range(1, days_in_month + 1)}
-        for emp_id in rotational_ids + [admin_id]
+        emp_id: {day: "" for day in range(1, days_in_month + 1)}
+        for emp_id in workers + [admin_id]
     }
 
+    # ===============================
+    # 3️⃣ ДЕН ПО ДЕН (БЛОКОВО)
+    # ===============================
 
     for day in range(1, days_in_month + 1):
-        if calendar.weekday(year, month, day) < 5 and day not in holidays:
+        weekday = calendar.weekday(year, month, day)
+
+        # --- администратор ---
+        if weekday < 5 and day not in holidays:
             schedule[admin_id][day] = "А"
 
+        # --- служители ---
+        today = {}
 
-    for day in range(1, days_in_month + 1):
-        required = ["D", "V", "N"]
-        used_today = {admin_id} if schedule[admin_id][day] == "А" else set()
+        for emp_id in workers:
+            shift = cycles[emp_id][0]
+            today.setdefault(shift, []).append(emp_id)
 
+        # покритие
+        required = {"Д", "В", "Н"}
+        available = {k for k in today if k in required}
+
+        if available != required:
+            raise RuntimeError(
+                f"Невъзможно покритие за ден {day}. "
+                f"Покрито: {available}"
+            )
+
+        # точно 1 човек на смяна
         for shift in required:
-            assigned = False
+            emp_id = today[shift].pop(0)
+            schedule[emp_id][day] = shift
 
-            for emp_id in rotational_ids:
-                if emp_id in used_today:
-                    continue
-
-                stack = stacks[emp_id]
-
-                for _ in range(CYCLE_LEN):
-                    code = stack[0]
-                    stack.rotate(-1)
-
-                    if code == shift:
-                        schedule[emp_id][day] = CYR[code]
-                        used_today.add(emp_id)
-                        assigned = True
-                        break
-
-                if assigned:
-                    break
-
-            if not assigned:
-                raise RuntimeError(f"Невъзможно покритие за {shift} на ден {day}")
+        # завъртаме циклите
+        for emp_id in workers:
+            cycles[emp_id].rotate(-1)
 
     return {
         "year": year,

@@ -63,13 +63,22 @@ class APIClient:
 
         raise RuntimeError(message)
 
+    def post_override(self, year, month, data):
+        r = requests.post(
+            f"{self.base}/schedule/{year}/{month}/override/",
+            json=data
+        )
 
-    def post_override(self, year: int, month: int, data: dict):
-        url = f"{self.base}/schedule/{year}/{month}/override/"
-        r = requests.post(url, json=data)
-        r.raise_for_status()
+        if r.status_code >= 400:
+            try:
+                payload = r.json()
+                message = payload.get("message", "Невалидна корекция.")
+                hint = payload.get("hint", "")
+                raise RuntimeError(f"{message}\n{hint}")
+            except Exception:
+                raise RuntimeError("Невалидна корекция.")
+
         return r.json()
-
 
     def get_employees(self):
         r = requests.get(f"{self.base}/employees/")

@@ -6,7 +6,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QBrush
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem,
-    QComboBox, QSizePolicy, QHeaderView
+    QComboBox, QSizePolicy, QHeaderView, QMessageBox
 )
 
 SHIFT_OPTIONS = ["", "Д", "В", "Н", "А", "О", "Б"]
@@ -162,23 +162,47 @@ class CalendarWidget(QWidget):
     def _combo(self, emp: EmpRow, day: int, current: str) -> QComboBox:
         cb = QComboBox()
         cb.addItems(SHIFT_OPTIONS)
+
         cb.blockSignals(True)
         cb.setCurrentText(current)
         cb.blockSignals(False)
 
+        old_value = current  # ✅ ЗАПАЗВАМЕ СТАРАТА СТОЙНОСТ
+
         def on_change():
             new = cb.currentText()
-            if new == current:
+            if new == old_value:
                 return
 
-            self.client.post_override(self.year, self.month, {
-                "employee_id": emp.emp_id,
-                "day": day,
-                "new_shift": new
-            })
+            try:
+                self.client.post_override(
+                    self.year,
+                    self.month,
+                    {
+                        "employee_id": emp.emp_id,
+                        "day": day,
+                        "new_shift": new,
+                    },
+                )
 
-            self._schedule.setdefault(emp.full_name, {})[day] = new
-            self._cell(self._row(emp.full_name), 1, str(self._count_worked(emp.full_name)), center=True)
+                # ✅ запис само ако API каже OK
+                self._schedule.setdefault(str(emp.emp_id), {})[day] = new
+                self._cell(
+                    self._row(emp.full_name),
+                    1,
+                    str(self._count_worked(str(emp.emp_id))),
+                    center=True,
+                )
+
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    "Невалидна корекция",
+                    str(e),
+                )
+                cb.blockSignals(True)
+                cb.setCurrentText(old_value)  # ✅ връщаме старата
+                cb.blockSignals(False)
 
         cb.currentIndexChanged.connect(lambda _: on_change())
         return cb

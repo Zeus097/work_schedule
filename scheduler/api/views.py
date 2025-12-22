@@ -19,6 +19,7 @@ from scheduler.api.serializers import (
     EmployeeUpdateSerializer,
 )
 from scheduler.api.utils.holidays import get_holidays_for_month
+from scheduler.logic.validators.validators import validate_month
 from scheduler.models import AdminEmployee, Employee
 
 
@@ -135,18 +136,55 @@ class GenerateMonthView(APIView):
 class ScheduleOverrideAPI(APIView):
     def post(self, request, year, month):
         emp_id = str(request.data.get("employee_id"))
-        day = str(request.data.get("day"))
+        day = int(request.data.get("day"))
         shift = _normalize_shift(request.data.get("new_shift"))
 
         data = load_month(year, month)
         if data.get("ui_locked"):
-            return Response({"error": "Месецът е заключен."}, status=409)
+            return api_error(
+                "MONTH_LOCKED",
+                "Месецът е заключен.",
+                http_status=409
+            )
 
+        # временно прилагаме override
+        temp_schedule = apply_overrides(
+            data.get("schedule", {}),
+            {
+                **data.get("overrides", {}),
+                emp_id: {
+                    **data.get("overrides", {}).get(emp_id, {}),
+                    day: shift,
+                }
+            }
+        )
+
+        # валидиране
+        days = calendar.monthrange(year, month)[1]
+        weekdays = {
+            d: calendar.weekday(year, month, d)
+            for d in range(1, days + 1)
+        }
+
+        errors = validate_month(temp_schedule, crisis_mode=False, weekdays=weekdays)
+
+        if errors:
+            return api_error(
+                "INVALID_OVERRIDE",
+                "Невалидна ръчна корекция.",
+                hint=str(errors[:3]),
+                http_status=400
+            )
+
+        # запис
         data.setdefault("schedule", {}).setdefault(emp_id, {})[day] = shift
         data.setdefault("overrides", {}).setdefault(emp_id, {})[day] = shift
         save_month(year, month, data)
 
         return Response({"status": "ok"})
+
+
+
 
 
 class LockMonthView(APIView):
@@ -157,10 +195,44 @@ class LockMonthView(APIView):
             return Response({"error": "Вече заключен."}, status=409)
 
         data["schedule"] = apply_overrides(data.get("schedule", {}), data.get("overrides", {}))
+
+        days = calendar.monthrange(year, month)[1]
+        weekdays = {
+            d: calendar.weekday(year, month, d)
+            for d in range(1, days + 1)
+        }
+
+        errors = validate_month(data["schedule"], crisis_mode=False, weekdays=weekdays)
+        if errors:
+            return api_error(
+                "INVALID_MONTH",
+                "Месецът има невалидни смени.",
+                hint=str(errors[:5]),
+                http_status=409
+            )
+
         data["ui_locked"] = True
         save_month(year, month, data)
 
         last_day = calendar.monthrange(year, month)[1]
+
+        final_schedule = apply_overrides(
+            data.get("schedule", {}),
+            data.get("overrides", {})
+        )
+
+        days = calendar.monthrange(year, month)[1]
+        weekdays = {d: calendar.weekday(year, month, d) for d in range(1, days + 1)}
+
+        errors = validate_month(final_schedule, crisis_mode=False, weekdays=weekdays)
+        if errors:
+            return api_error(
+                "INVALID_MONTH",
+                "Месецът има невалидни промени и не може да се заключи.",
+                hint=str(errors[:5]),
+                http_status=409,
+            )
+
         save_last_cycle_state(data["schedule"], date(year, month, last_day))
 
         return Response({"status": "locked"})
@@ -240,6 +312,21 @@ class EmployeeDetailView(APIView):
             )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+
+class ValidateMonthView(APIView):
+    def post(self, request, year, month):
+        data = load_month(year, month)
+        admin = AdminEmployee.objects.first()
+        admin_id = str(admin.employee.id)
+
+        errors = validate_month(data["schedule"], admin_id)
+
+        return Response({
+            "valid": len(errors) == 0,
+            "errors": errors,
+        })
 
 
 
