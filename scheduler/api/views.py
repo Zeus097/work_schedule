@@ -23,6 +23,9 @@ from scheduler.logic.validators.validators import validate_month
 from scheduler.models import AdminEmployee, Employee
 from scheduler.api.utils.validation_errors import humanize_validation_error
 
+from scheduler.logic.months_logic import load_month, save_month
+from scheduler.api.errors import api_error
+
 
 
 def _prev_year_month(year: int, month: int) -> tuple[int, int]:
@@ -96,6 +99,16 @@ class GenerateMonthView(APIView):
         month = serializer.validated_data["month"]
 
         first_run = not load_last_cycle_state() and not list_month_files()
+        # ✅ Ако месецът вече съществува и не е заключен → позволяваме регенериране
+        try:
+            existing = load_month(year, month)
+            if existing and not existing.get("ui_locked"):
+                generated = generate_new_month(year, month)
+                generated["ui_locked"] = False
+                save_month(year, month, generated)
+                return Response({"generated": True, "regenerated": True}, status=201)
+        except FileNotFoundError:
+            pass
 
         if not first_run:
             py, pm = _prev_year_month(year, month)
@@ -133,8 +146,6 @@ class GenerateMonthView(APIView):
         )
 
 
-
-
 class ScheduleOverrideAPI(APIView):
     def post(self, request, year, month):
         emp_id = str(request.data.get("employee_id"))
@@ -157,11 +168,6 @@ class ScheduleOverrideAPI(APIView):
         save_month(year, month, data)
 
         return Response({"status": "ok"})
-
-
-
-
-
 
 
 class LockMonthView(APIView):
@@ -236,7 +242,6 @@ class LockMonthView(APIView):
         )
 
 
-
 @method_decorator(csrf_exempt, name="dispatch")
 class SetAdminView(APIView):
     def post(self, request):
@@ -271,7 +276,6 @@ class EmployeeListCreateView(APIView):
             EmployeeSerializer(employee).data,
             status=status.HTTP_201_CREATED
         )
-
 
 
 class EmployeeDetailView(APIView):
@@ -313,7 +317,6 @@ class EmployeeDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-
 class ValidateMonthView(APIView):
     def post(self, request, year, month):
         data = load_month(year, month)
@@ -328,4 +331,51 @@ class ValidateMonthView(APIView):
         })
 
 
+class ClearScheduleAPI(APIView):
+    def post(self, request, year: int, month: int):
+        data = load_month(year, month)
 
+        if not data:
+            return api_error(
+                code="MONTH_NOT_FOUND",
+                message="Месецът не съществува.",
+                http_status=404,
+            )
+
+        if data.get("ui_locked"):
+            return api_error(
+                code="MONTH_LOCKED",
+                message="Месецът е заключен и не може да се изчисти.",
+                http_status=409,
+            )
+
+        # 🧹 ИЗЧИСТВАНЕ
+        data["schedule"] = {}
+        data["overrides"] = {}
+        data["ui_locked"] = False
+
+        save_month(year, month, data)
+
+        return Response({"ok": True})
+
+
+class ClearMonthScheduleAPI(APIView):
+    def post(self, request, year: int, month: int):
+        data = load_month(year, month)
+
+        if data.get("ui_locked"):
+            return api_error(
+                code="MONTH_LOCKED",
+                message="Месецът е заключен.",
+                hint="Отключи месеца или използвай 'Приеми като начало'.",
+                http_status=409
+            )
+
+        data["schedule"] = {}
+        data["overrides"] = {}
+        data["states"] = {}
+        data["ideal"] = {}
+
+        save_month(year, month, data)
+
+        return Response({"status": "ok"})

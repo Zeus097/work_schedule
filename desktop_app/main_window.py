@@ -80,11 +80,26 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(grid)
 
         tools = QHBoxLayout()
+
+        # Лява колона – инструменти за редакция
+        left_tools = QVBoxLayout()
+
         self.override_btn = QPushButton("✏️ Ръчни корекции")
         self.override_btn.setCheckable(True)
         self.override_btn.clicked.connect(self.toggle_override)
-        tools.addWidget(self.override_btn)
+        left_tools.addWidget(self.override_btn)
+
+        self.clear_btn = QPushButton("🧹 Изчисти графика")
+        self.clear_btn.clicked.connect(self.clear_schedule)
+        self.clear_btn.setEnabled(False)
+        left_tools.addWidget(self.clear_btn)
+
+        left_tools.addStretch()
+        tools.addLayout(left_tools)
+
+        # пространство по средата
         tools.addStretch()
+
         main_layout.addLayout(tools)
 
         export_layout = QHBoxLayout()
@@ -199,8 +214,12 @@ class MainWindow(QMainWindow):
         self._update_lock_ui()
         self.month_title.setText(f"{MONTH_NAMES[month]} {year} г.")
 
-        # ❌ няма какво да се генерира вече
-        self.generate_btn.setEnabled(False)
+        # ✅ Ако графикът е празен (след clear) -> позволяваме генериране
+        has_any_shift = any(
+            (str(shift).strip() for emp_days in self.current_schedule.values() for shift in emp_days.values())
+        ) if self.current_schedule else False
+
+        self.generate_btn.setEnabled(not self.is_locked and not has_any_shift)
 
     # =====================================================
     def toggle_override(self):
@@ -239,6 +258,7 @@ class MainWindow(QMainWindow):
         self.admin_btn.setEnabled(not self.is_locked)
         self.override_btn.setEnabled(not self.is_locked)
 
+        self.clear_btn.setEnabled(not self.is_locked and bool(self.current_schedule))
 
     # =====================================================
     def open_admin(self):
@@ -312,3 +332,41 @@ class MainWindow(QMainWindow):
 
         QMessageBox.information(self, "Готово", "Месецът е генериран.")
         self.load_month()
+
+    def clear_schedule(self):
+        reply = QMessageBox.question(
+            self,
+            "Изчистване на графика",
+            "Сигурен ли си, че искаш да изчистиш целия график за месеца?\n\n"
+            "Всички смени ще бъдат премахнати и месецът ще остане отворен.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        year = int(self.current_year)
+        month = int(self.current_month)
+
+        try:
+            self.client.clear_month(year, month)
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Грешка",
+                f"Неуспешно изчистване на графика:\n{e}"
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Готово",
+            "Графикът е изчистен успешно.\n"
+            "Можеш да генерираш нов или да въведеш смените ръчно."
+        )
+
+        self.load_month()
+
+
+
+

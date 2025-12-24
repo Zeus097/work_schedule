@@ -146,3 +146,13 @@ class APIClient:
         r = requests.post(url, json=payload)
         r.raise_for_status()
 
+    def clear_schedule(self, year: int, month: int):
+        r = requests.post(f"{self.base}/schedule/{year}/{month}/clear/")
+        r.raise_for_status()
+        return r.json()
+
+    def clear_month(self, year: int, month: int):
+        url = f"{self.base}/schedule/{year}/{month}/clear/"
+        r = requests.post(url)
+        r.raise_for_status()
+        return r.json()
