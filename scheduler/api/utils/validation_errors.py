@@ -1,13 +1,12 @@
-def humanize_validation_error(employee, day, raw_message):
-    """
-    Превръща вътрешна грешка от валидатора
-    в човешко, UI-приятелско съобщение.
-    """
+ERROR_BLOCKING = "blocking"
+ERROR_SOFT = "soft"
 
-    # --- Покритие ---
+
+def humanize_validation_error(employee, day, raw_message):
     if employee == "ПОКРИТИЕ":
         if "Д" in raw_message:
             return {
+                "type": ERROR_BLOCKING,
                 "day": day,
                 "employee": None,
                 "message": "Липсва или има повече от една дневна смяна (Д).",
@@ -15,6 +14,7 @@ def humanize_validation_error(employee, day, raw_message):
             }
         if "В" in raw_message:
             return {
+                "type": ERROR_BLOCKING,
                 "day": day,
                 "employee": None,
                 "message": "Липсва или има повече от една вечерна смяна (В).",
@@ -22,32 +22,36 @@ def humanize_validation_error(employee, day, raw_message):
             }
         if "Н" in raw_message:
             return {
+                "type": ERROR_BLOCKING,
                 "day": day,
                 "employee": None,
                 "message": "Липсва или има повече от една нощна смяна (Н).",
                 "hint": "Трябва да има точно 1× Н смяна за деня."
             }
 
-    # --- Ротация ---
+    # --- Ротация (SOFT) ---
     if "Невалидна ротация" in raw_message:
         return {
+            "type": ERROR_SOFT,
             "day": day,
             "employee": employee,
             "message": "Невалидна последователност на смените.",
             "hint": "Провери почивките между смените (след Н – 2 дни почивка)."
         }
 
-    # --- Администратор ---
+    # --- Администратор (SOFT) ---
     if "Администратор" in raw_message:
         return {
+            "type": ERROR_SOFT,
             "day": day,
             "employee": employee,
             "message": "Администраторът не може да работи в този ден.",
             "hint": "Администраторът работи само делнични дни със смяна А."
         }
 
-    # --- Fallback ---
+    # --- Fallback (BLOCKING, безопасно) ---
     return {
+        "type": ERROR_BLOCKING,
         "day": day,
         "employee": employee,
         "message": "Невалидна смяна.",

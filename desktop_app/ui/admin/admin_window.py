@@ -26,10 +26,6 @@ def _get_employee_name_map(self) -> dict:
 
 
 def extract_last_shifts(schedule: dict, days_in_month: int) -> dict:
-    """
-    schedule е по employee_id:
-    { "57": { "1":"Д", "2":"", ...}, ... }
-    """
     result = {}
     for emp_id, days in schedule.items():
         # days е dict с ключове "1","2"... или 1,2...
@@ -93,6 +89,10 @@ class AdminWindow(QWidget):
         self.lock_btn = QPushButton("Запис (заключи месеца)")
         self.lock_btn.clicked.connect(self.confirm_and_lock)
         layout.addWidget(self.lock_btn)
+
+        self.accept_btn = QPushButton("♻️ Приеми текущия месец като начало")
+        self.accept_btn.clicked.connect(self.accept_as_start)
+        layout.addWidget(self.accept_btn)
 
     # =====================================================
     def load_data(self):
@@ -201,7 +201,7 @@ class AdminWindow(QWidget):
 
 
         if not result.get("ok", True):
-            summary = self._summarize_lock_errors(result.get("errors", []))
+            summary = self._summarize_lock_errors(result.get("errors"))
             self._show_lock_errors_dialog(summary)
             return
 
@@ -212,7 +212,7 @@ class AdminWindow(QWidget):
             try:
                 self.client.get_schedule(ny, nm)
             except FileNotFoundError:
-                self.client.generate_month(ny, nm)
+                self.client.generate_month(ny, nm, strict=False)
         except Exception as e:
             QMessageBox.warning(
                 self,
@@ -221,7 +221,7 @@ class AdminWindow(QWidget):
                 f"Причина:\n{e}\n\n"
                 f"Коригирай текущия месец и опитай отново."
             )
-            return
+
 
 
         try:
@@ -297,5 +297,35 @@ class AdminWindow(QWidget):
 
         dialog.exec()
 
+    def accept_as_start(self):
+        reply = QMessageBox.question(
+            self,
+            "Потвърждение",
+            "Сигурен ли си?\nТози месец ще стане новото начало за всички следващи графици.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        year = int(self.main_window.current_year)
+        month = int(self.main_window.current_month)
+
+        try:
+            self.client.accept_month_as_start(year, month)
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Грешка",
+                f"Операцията не беше успешна:\n{e}"
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Готово",
+            "Текущият месец е приет като ново начало.\n"
+            "Следващите месеци ще се генерират от него."
+        )
 
 

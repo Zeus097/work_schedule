@@ -86,6 +86,14 @@ class ScheduleView(APIView):
 
 
 class GenerateMonthView(APIView):
+
+    @staticmethod
+    def _is_empty_schedule(schedule: dict) -> bool:
+        return all(
+            all(v == "" for v in days.values())
+            for days in schedule.values()
+        )
+
     def post(self, request):
         serializer = GenerateMonthSerializer(data=request.data)
         if not serializer.is_valid():
@@ -98,28 +106,62 @@ class GenerateMonthView(APIView):
         year = serializer.validated_data["year"]
         month = serializer.validated_data["month"]
 
+        # 🔧 default strict
+        strict = serializer.validated_data.get("strict", True)
+
         first_run = not load_last_cycle_state() and not list_month_files()
-        # ✅ Ако месецът вече съществува и не е заключен → позволяваме регенериране
+
+        # =================================================
+        # 1️⃣ Ако месецът съществува
+        # =================================================
         try:
             existing = load_month(year, month)
-            if existing and not existing.get("ui_locked"):
-                generated = generate_new_month(year, month)
+
+            # 🧹 АКО графикът е празен → винаги SOFT
+            if self._is_empty_schedule(existing.get("schedule", {})):
+                strict = False
+
+            # 🔁 Регенериране е позволено само ако НЕ е заключен
+            if not existing.get("ui_locked"):
+                generated = generate_new_month(
+                    year=year,
+                    month=month,
+                    strict=strict,
+                )
                 generated["ui_locked"] = False
                 save_month(year, month, generated)
-                return Response({"generated": True, "regenerated": True}, status=201)
+
+                return Response(
+                    {
+                        "generated": True,
+                        "regenerated": True,
+                        "strict": strict,
+                    },
+                    status=201
+                )
+
         except FileNotFoundError:
             pass
 
+        # =================================================
+        # 2️⃣ Проверка на предходния месец (НОВ месец)
+        # =================================================
         if not first_run:
             py, pm = _prev_year_month(year, month)
+
             try:
                 prev = load_month(py, pm)
+
                 if not prev.get("ui_locked"):
                     return api_error(
                         "PREV_NOT_LOCKED",
                         "Предходният месец не е заключен.",
                         http_status=409
                     )
+
+                # 🔑 ключово: ако предходният е заключен → SOFT
+                strict = False
+
             except FileNotFoundError:
                 return api_error(
                     "PREV_MISSING",
@@ -127,12 +169,21 @@ class GenerateMonthView(APIView):
                     http_status=409
                 )
 
-
+        # =================================================
+        # 3️⃣ Генерация на нов месец
+        # =================================================
         try:
-            generated = generate_new_month(year, month)
-        except Exception:
-            raise
-
+            generated = generate_new_month(
+                year=year,
+                month=month,
+                strict=strict,
+            )
+        except RuntimeError as e:
+            return api_error(
+                "GENERATION_FAILED",
+                str(e),
+                http_status=409
+            )
 
         generated["ui_locked"] = False
         save_month(year, month, generated)
@@ -140,10 +191,12 @@ class GenerateMonthView(APIView):
         return Response(
             {
                 "generated": True,
-                "bootstrap": first_run
+                "bootstrap": first_run,
+                "strict": strict,
             },
             status=201
         )
+
 
 
 class ScheduleOverrideAPI(APIView):
@@ -210,14 +263,22 @@ class LockMonthView(APIView):
                 for emp, day, msg in errors
             ]
 
-            return Response(
-                {
-                    "ok": False,
-                    "locked": False,
-                    "errors": readable_errors
-                },
-                status=409
-            )
+            blocking_errors = [
+                e for e in readable_errors
+                if e.get("type") == "blocking"
+            ]
+
+            if blocking_errors:
+                return Response(
+                    {
+                        "ok": False,
+                        "locked": False,
+                        "errors": blocking_errors,
+                        "message": "Месецът има блокиращи грешки."
+                    },
+                    status=409
+                )
+
 
         # 3️⃣ Заключване
         data["schedule"] = final_schedule
@@ -379,3 +440,28 @@ class ClearMonthScheduleAPI(APIView):
         save_month(year, month, data)
 
         return Response({"status": "ok"})
+
+
+class AcceptMonthAsStartAPI(APIView):
+    def post(self, request, year: int, month: int):
+        data = load_month(year, month)
+
+        schedule = apply_overrides(
+            data.get("schedule", {}),
+            data.get("overrides", {})
+        )
+
+        if not schedule:
+            return api_error(
+                code="EMPTY_MONTH",
+                message="Месецът няма график.",
+                hint="Първо генерирай или въведи смени.",
+                http_status=400
+            )
+
+        last_day = calendar.monthrange(year, month)[1]
+        save_last_cycle_state(schedule, date(year, month, last_day))
+
+        return Response({"ok": True})
+
+

@@ -35,25 +35,29 @@ class APIClient:
         data["schedule"] = normalized_schedule
         return data
 
-    def generate_month(self, year: int, month: int):
+    def generate_month(self, year: int, month: int, strict: bool = True):
         url = f"{self.base}/schedule/generate/"
-        r = requests.post(url, json={"year": int(year), "month": int(month)})
+        payload = {
+            "year": int(year),
+            "month": int(month),
+            "strict": strict,
+        }
 
+        r = requests.post(url, json=payload)
 
-        if r.status_code == 201:
+        if r.status_code in (200, 201):
             return r.json()
-
 
         if r.status_code == 409:
             try:
                 data = r.json()
-                message = data.get("message", "Не може да се генерира месец.")
+                message = data.get("message", "Месецът не може да бъде генериран.")
                 hint = data.get("hint", "")
             except Exception:
-                message = "Не може да се генерира месец."
+                message = "Месецът не може да бъде генериран."
                 hint = ""
-            raise RuntimeError(f"{message}\n{hint}".strip())
 
+            raise RuntimeError(f"{message}\n{hint}".strip())
 
         try:
             data = r.json()
@@ -114,7 +118,7 @@ class APIClient:
 
         r = requests.post(url, json=payload)
 
-        # ❗ 409 = очакван резултат при невалиден месец
+        # ❗ 409 = има BLOCKING грешки
         if r.status_code == 409:
             try:
                 data = r.json()
@@ -128,12 +132,15 @@ class APIClient:
             return {
                 "ok": False,
                 "errors": data.get("errors", []),
-                "message": "Месецът не може да бъде заключен."
+                "message": data.get("message", "Месецът не може да бъде заключен.")
             }
 
         r.raise_for_status()
 
-        return r.json()
+        return {
+            "ok": True,
+            **r.json()
+        }
 
     def set_admin(self, employee_id: str):
         url = f"{self.base}/admin/set/"
@@ -153,6 +160,12 @@ class APIClient:
 
     def clear_month(self, year: int, month: int):
         url = f"{self.base}/schedule/{year}/{month}/clear/"
+        r = requests.post(url)
+        r.raise_for_status()
+        return r.json()
+
+    def accept_month_as_start(self, year: int, month: int):
+        url = f"{self.base}/schedule/{year}/{month}/accept-as-start/"
         r = requests.post(url)
         r.raise_for_status()
         return r.json()
