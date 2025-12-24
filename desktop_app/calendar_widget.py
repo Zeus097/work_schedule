@@ -141,8 +141,24 @@ class CalendarWidget(QWidget):
 
             self._cell(r, cols - 1, emp.card_number, center=True)
 
-        self.table.resizeColumnsToContents()
-        self.table.resizeRowsToContents()
+        header = self.table.horizontalHeader()
+
+        # №
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        # Бр.
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        # Служител → ВАЖНО
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        self.table.setColumnWidth(2, 240)  # ⬅️ тук контролираш четимостта
+
+        # Дните → разтягаме
+        for col in range(3, self.table.columnCount() - 1):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Stretch)
+
+        # Служебен №
+        header.setSectionResizeMode(self.table.columnCount() - 1, QHeaderView.ResizeMode.ResizeToContents)
+
+        header.setMinimumSectionSize(28)
 
     # =====================================================
     def _paint_day_header(self):
@@ -161,6 +177,31 @@ class CalendarWidget(QWidget):
     # =====================================================
     def _combo(self, emp: EmpRow, day: int, current: str) -> QComboBox:
         cb = QComboBox()
+        cb.setMinimumWidth(48)
+        cb.view().setMinimumWidth(48)
+
+        cb.setStyleSheet("""
+        QComboBox {
+            background-color: #373737;
+            color: #f0f0f0;
+            border: none;
+            padding-left: 6px;
+            min-width: 22px;
+        }
+        QComboBox::drop-down {
+            width: 0px;
+            border: none;
+        }
+        QComboBox::down-arrow {
+            image: none;
+        }
+        QComboBox QAbstractItemView {
+            background-color: #2d2d2d;
+            color: #f0f0f0;
+            selection-background-color: #5a8dee;
+        }
+        """)
+
         cb.addItems(SHIFT_OPTIONS)
 
         cb.blockSignals(True)
