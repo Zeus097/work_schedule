@@ -105,15 +105,34 @@ class APIClient:
         r.raise_for_status()
         return True
 
-
     def lock_month(self, year: int, month: int, last_shifts: dict | None = None):
         url = f"{self.base}/schedule/{year}/{month}/lock/"
         payload = {}
+
         if isinstance(last_shifts, dict) and last_shifts:
             payload["last_shifts"] = last_shifts
 
         r = requests.post(url, json=payload)
+
+        # ❗ 409 = очакван резултат при невалиден месец
+        if r.status_code == 409:
+            try:
+                data = r.json()
+            except Exception:
+                return {
+                    "ok": False,
+                    "errors": [],
+                    "message": "Месецът не може да бъде заключен."
+                }
+
+            return {
+                "ok": False,
+                "errors": data.get("errors", []),
+                "message": "Месецът не може да бъде заключен."
+            }
+
         r.raise_for_status()
+
         return r.json()
 
     def set_admin(self, employee_id: str):

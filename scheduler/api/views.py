@@ -21,6 +21,8 @@ from scheduler.api.serializers import (
 from scheduler.api.utils.holidays import get_holidays_for_month
 from scheduler.logic.validators.validators import validate_month
 from scheduler.models import AdminEmployee, Employee
+from scheduler.api.utils.validation_errors import humanize_validation_error
+
 
 
 def _prev_year_month(year: int, month: int) -> tuple[int, int]:
@@ -140,6 +142,7 @@ class ScheduleOverrideAPI(APIView):
         shift = _normalize_shift(request.data.get("new_shift"))
 
         data = load_month(year, month)
+
         if data.get("ui_locked"):
             return api_error(
                 "MONTH_LOCKED",
@@ -147,38 +150,10 @@ class ScheduleOverrideAPI(APIView):
                 http_status=409
             )
 
-        # временно прилагаме override
-        temp_schedule = apply_overrides(
-            data.get("schedule", {}),
-            {
-                **data.get("overrides", {}),
-                emp_id: {
-                    **data.get("overrides", {}).get(emp_id, {}),
-                    day: shift,
-                }
-            }
-        )
-
-        # валидиране
-        days = calendar.monthrange(year, month)[1]
-        weekdays = {
-            d: calendar.weekday(year, month, d)
-            for d in range(1, days + 1)
-        }
-
-        errors = validate_month(temp_schedule, crisis_mode=False, weekdays=weekdays)
-
-        if errors:
-            return api_error(
-                "INVALID_OVERRIDE",
-                "Невалидна ръчна корекция.",
-                hint=str(errors[:3]),
-                http_status=400
-            )
-
-        # запис
+        # записваме override БЕЗ валидиране
         data.setdefault("schedule", {}).setdefault(emp_id, {})[day] = shift
         data.setdefault("overrides", {}).setdefault(emp_id, {})[day] = shift
+
         save_month(year, month, data)
 
         return Response({"status": "ok"})
@@ -187,55 +162,79 @@ class ScheduleOverrideAPI(APIView):
 
 
 
+
+
 class LockMonthView(APIView):
     def post(self, request, year, month):
-        data = load_month(year, month)
+        try:
+            data = load_month(year, month)
+        except FileNotFoundError:
+            return api_error(
+                "NOT_FOUND",
+                "Месецът не съществува.",
+                http_status=404
+            )
 
         if data.get("ui_locked"):
-            return Response({"error": "Вече заключен."}, status=409)
-
-        data["schedule"] = apply_overrides(data.get("schedule", {}), data.get("overrides", {}))
-
-        days = calendar.monthrange(year, month)[1]
-        weekdays = {
-            d: calendar.weekday(year, month, d)
-            for d in range(1, days + 1)
-        }
-
-        errors = validate_month(data["schedule"], crisis_mode=False, weekdays=weekdays)
-        if errors:
             return api_error(
-                "INVALID_MONTH",
-                "Месецът има невалидни смени.",
-                hint=str(errors[:5]),
+                "ALREADY_LOCKED",
+                "Месецът вече е заключен.",
                 http_status=409
             )
 
-        data["ui_locked"] = True
-        save_month(year, month, data)
-
-        last_day = calendar.monthrange(year, month)[1]
-
+        # 1️⃣ Финален график = schedule + overrides
         final_schedule = apply_overrides(
             data.get("schedule", {}),
             data.get("overrides", {})
         )
 
+        # 2️⃣ Валидиране
         days = calendar.monthrange(year, month)[1]
         weekdays = {d: calendar.weekday(year, month, d) for d in range(1, days + 1)}
 
-        errors = validate_month(final_schedule, crisis_mode=False, weekdays=weekdays)
+        errors = validate_month(
+            final_schedule,
+            crisis_mode=False,
+            weekdays=weekdays
+        )
+
         if errors:
-            return api_error(
-                "INVALID_MONTH",
-                "Месецът има невалидни промени и не може да се заключи.",
-                hint=str(errors[:5]),
-                http_status=409,
+            readable_errors = [
+                humanize_validation_error(emp, day, msg)
+                for emp, day, msg in errors
+            ]
+
+            return Response(
+                {
+                    "ok": False,
+                    "locked": False,
+                    "errors": readable_errors
+                },
+                status=409
             )
 
-        save_last_cycle_state(data["schedule"], date(year, month, last_day))
+        # 3️⃣ Заключване
+        data["schedule"] = final_schedule
+        data["ui_locked"] = True
+        save_month(year, month, data)
 
-        return Response({"status": "locked"})
+        # 4️⃣ Update cycle_state
+        last_day = calendar.monthrange(year, month)[1]
+        save_last_cycle_state(
+            final_schedule,
+            date(year, month, last_day)
+        )
+
+        return Response(
+            {
+                "ok": True,
+                "locked": True,
+                "year": year,
+                "month": month
+            },
+            status=200
+        )
+
 
 
 @method_decorator(csrf_exempt, name="dispatch")

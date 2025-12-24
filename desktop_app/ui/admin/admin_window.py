@@ -18,6 +18,13 @@ from desktop_app.api_client import APIClient
 ALLOWED_SHIFTS = ["", "Д", "В", "Н", "А", "О", "Б"]
 
 
+def _get_employee_name_map(self) -> dict:
+    return {
+        str(e["id"]): e["full_name"]
+        for e in self.client.get_employees()
+    }
+
+
 def extract_last_shifts(schedule: dict, days_in_month: int) -> dict:
     """
     schedule е по employee_id:
@@ -69,13 +76,13 @@ class AdminWindow(QWidget):
         layout.addWidget(title)
 
         desc = QLabel(
-            "Избери администратор (само един) и последна смяна за всеки служител.\n"
+            "Избери администратор.\nПоследната смяна е информативна и идва от графика."
             "Изборът на администратор важи за следващите месеци."
         )
         layout.addWidget(desc)
 
         self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["Админ", "Служител", "Последна смяна"])
+        self.table.setHorizontalHeaderLabels(["Админ", "Служител", "Последна работна смяна"])
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table)
 
@@ -137,30 +144,13 @@ class AdminWindow(QWidget):
             self.table.setItem(row, 1, name_item)
 
             # --- Последна смяна ---
-            combo = QComboBox()
-            combo.addItems(ALLOWED_SHIFTS)
-            combo.setCurrentText(last_shifts.get(emp_id, ""))
-            self.table.setCellWidget(row, 2, combo)
+            last_shift = last_shifts.get(emp_id, "")
 
-    # =====================================================
-    def _collect_last_shifts_from_table(self) -> dict:
-        """
-        Връща:
-        { employee_id: "Д/В/Н/..." }
-        """
-        result = {}
-        for row in range(self.table.rowCount()):
-            name_item = self.table.item(row, 1)
-            combo = self.table.cellWidget(row, 2)
+            item = QTableWidgetItem(last_shift if last_shift else "—")
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
-            if not name_item:
-                continue
-
-            emp_id = name_item.data(Qt.ItemDataRole.UserRole)
-            shift = combo.currentText().strip() if isinstance(combo, QComboBox) else ""
-            result[str(emp_id)] = shift
-
-        return result
+            self.table.setItem(row, 2, item)
 
     # =====================================================
     def _get_selected_admin(self) -> str | None:
@@ -196,50 +186,116 @@ class AdminWindow(QWidget):
         year = int(self.main_window.current_year)
         month = int(self.main_window.current_month)
 
-        # 1️⃣ Администратор (по ID)
+
         try:
-            # Ако backend очаква "name", а ти пращаш ID -> оправи APIClient.set_admin да праща "id"
-            # или направи SetAdminView да приема и "id".
             self.client.set_admin(admin_id)
         except Exception as e:
-            QMessageBox.critical(self, "Грешка", f"Неуспешна смяна на админ:\n{e}")
+            QMessageBox.critical(
+                self,
+                "Грешка",
+                f"Неуспешна смяна на администратор:\n{e}"
+            )
             return
 
-        # 2️⃣ Последни смени (по ID)
-        last_shifts = self._collect_last_shifts_from_table()
+        result = self.client.lock_month(year, month)
 
-        # 3️⃣ Заключване
-        try:
-            self.client.lock_month(year, month, last_shifts=last_shifts)
-        except Exception as e:
-            QMessageBox.critical(self, "Грешка при заключване", str(e))
+
+        if not result.get("ok", True):
+            summary = self._summarize_lock_errors(result.get("errors", []))
+            self._show_lock_errors_dialog(summary)
             return
 
-        # 4️⃣ AUTO: следващ месец (зареди ако има, иначе генерирай и зареди)
+
         ny, nm = next_year_month(year, month)
 
         try:
-            self.client.get_schedule(ny, nm)
-        except FileNotFoundError:
             try:
-                # трябва да имаш това в APIClient -> POST /api/schedule/generate/
+                self.client.get_schedule(ny, nm)
+            except FileNotFoundError:
                 self.client.generate_month(ny, nm)
-            except Exception as e:
-                QMessageBox.warning(
-                    self,
-                    "Заключено, но без нов месец",
-                    f"Месецът е заключен успешно.\n"
-                    f"Но следващият месец ({nm:02d}.{ny}) не успя да се генерира:\n{e}"
-                )
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Заключването е отказано",
+                f"Следващият месец ({nm:02d}.{ny}) не може да бъде подготвен.\n\n"
+                f"Причина:\n{e}\n\n"
+                f"Коригирай текущия месец и опитай отново."
+            )
+            return
 
-        # 5️⃣ Превключи UI към следващия месец и зареди
+
         try:
             self.main_window.year_select.setCurrentText(str(ny))
             self.main_window.month_select.setCurrentIndex(nm - 1)
         except Exception:
-            # ако селекторите са различни при теб, поне зареди по текущите стойности
             pass
 
-        QMessageBox.information(self, "Заключено", "Месецът е успешно заключен.")
+        QMessageBox.information(
+            self,
+            "Заключено",
+            "Месецът е успешно заключен."
+        )
+
         self.main_window.load_month()
         self.close()
+
+    def _summarize_lock_errors(self, errors: list[dict]) -> str:
+        id_to_name = {
+            str(e["id"]): e["full_name"]
+            for e in self.client.get_employees()
+        }
+
+        first_error_per_employee = {}
+
+        for err in errors:
+            raw_employee = err.get("employee")
+            employee = (
+                id_to_name.get(str(raw_employee), raw_employee)
+                if raw_employee else "Покритие за деня"
+            )
+
+            if employee not in first_error_per_employee:
+                first_error_per_employee[employee] = err
+
+        lines = []
+
+        for employee, err in first_error_per_employee.items():
+            day = err.get("day")
+            message = err.get("message", "")
+            hint = err.get("hint", "")
+
+            if employee == "Покритие за деня":
+                lines.append(
+                    f"⚠️ Ден {day}: {message}"
+                )
+            else:
+                lines.append(
+                    f"👤 {employee} – ден {day}: {message}"
+                )
+
+            if hint:
+                lines.append(f"   → {hint}")
+
+        lines.append(
+            "\nℹ️ Натисни „Прекрати заключването“, за да се върнеш и коригираш смените."
+        )
+
+        return "\n".join(lines)
+
+    def _show_lock_errors_dialog(self, summary_text: str):
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Месецът не може да бъде заключен")
+        dialog.setIcon(QMessageBox.Icon.Warning)
+
+        dialog.setText("Има проблеми в графика:")
+        dialog.setInformativeText(summary_text)
+
+        dialog.setStandardButtons(QMessageBox.StandardButton.Ok)
+        dialog.button(QMessageBox.StandardButton.Ok).setText(
+            "Прекрати заключването и се върни за корекции"
+        )
+
+        dialog.exec()
+
+
+
