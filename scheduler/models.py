@@ -22,17 +22,22 @@ class Employee(models.Model):
         return self.full_name
 
 
-class AdminEmployee(models.Model):
-    employee = models.OneToOneField(
+class MonthAdmin(models.Model):
+    year = models.PositiveSmallIntegerField()
+    month = models.PositiveSmallIntegerField()
+    employee = models.ForeignKey(
         Employee,
         on_delete=models.CASCADE,
-        related_name="admin_profile",
+        related_name="month_admins"
     )
-    is_super_admin = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        unique_together = ("year", "month")
+        ordering = ["-year", "-month"]
+
     def __str__(self) -> str:
-        return f"Admin: {self.employee.full_name}"
+        return f"{self.employee.full_name} – {self.year}-{self.month:02d}"
 
 
 class MonthRecord(models.Model):

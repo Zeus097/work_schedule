@@ -5,9 +5,11 @@ from desktop_app.config import API_BASE_URL
 class APIClient:
     """
         HTTP client for communicating with the scheduling backend API.
-        Encapsulates all network operations related to schedules, employees,
-        administration actions, and month lifecycle management, while handling
-        response normalization and error translation for the UI layer.
+            - Provides a thin abstraction over all REST endpoints
+            - Handles schedules, month lifecycle, and generation actions
+            - Manages employee CRUD operations and role assignments
+            - Translates HTTP errors into exceptions usable by the UI layer
+            - Serves as the single networking layer for the desktop application
     """
 
     def __init__(self):
@@ -149,12 +151,6 @@ class APIClient:
             **r.json()
         }
 
-    def set_admin(self, employee_id: str):
-        url = f"{self.base}/admin/set/"
-        r = requests.post(url, json={"employee_id": employee_id})
-        r.raise_for_status()
-        return r.json()
-
     def _force_create_month(self, payload: dict):
         url = f"{self.base}/internal/bootstrap-month/"
         r = requests.post(url, json=payload)
@@ -176,3 +172,20 @@ class APIClient:
         r = requests.post(url)
         r.raise_for_status()
         return r.json()
+
+    def set_month_admin(self, year: int, month: int, employee_id: int):
+        url = f"{self.base}/schedule/{year}/{month}/admin/"
+        r = requests.post(url, json={"employee_id": employee_id})
+        r.raise_for_status()
+        return r.json()
+
+    def get_month_admin(self, year: int, month: int):
+        try:
+            data = self.get_schedule(year, month)
+            return data.get("month_admin_id")
+        except FileNotFoundError:
+            return None
+
+
+
+

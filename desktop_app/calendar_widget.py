@@ -6,8 +6,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QBrush
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem,
-    QComboBox, QSizePolicy, QHeaderView, QMessageBox
+    QComboBox, QSizePolicy, QHeaderView
 )
+from desktop_app.msgbox import warning
+
 
 SHIFT_OPTIONS = ["", "Д", "В", "Н", "А", "О", "Б"]
 COUNT_AS_WORKED: Set[str] = {"Д", "В", "Н", "А", "О", "Б"}
@@ -205,7 +207,7 @@ class CalendarWidget(QWidget):
             self.table.setItem(0, col, it)
 
 
-    def _combo(self, emp: EmpRow, day: int, current: str) -> QComboBox:
+    def _combo(self, emp: EmpRow, day: int, current: str):
         """
             Creates a shift-selection combo box for override mode.
             Allows changing a single day’s shift for an employee, posts the override
@@ -271,7 +273,7 @@ class CalendarWidget(QWidget):
                 )
 
             except Exception as e:
-                QMessageBox.warning(
+                warning(
                     self,
                     "Невалидна корекция",
                     str(e),

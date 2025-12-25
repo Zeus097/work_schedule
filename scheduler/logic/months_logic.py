@@ -25,26 +25,19 @@ def save_month(year: int, month: int, data: Dict[str, Any]) -> None:
 
 
 def load_month(year: int, month: int) -> Dict[str, Any]:
-    """
-        Loads month YYYY-MM.json.
-        !!!: Only applies overrides.
-    """
     path = get_month_path(year, month)
-
     data = _load_json(path)
-
-    if "schedule" not in data:
-        data["schedule"] = {}
-
-    if "overrides" not in data:
-        data["overrides"] = {}
-
-    data["schedule"] = apply_overrides(
+    data.setdefault("schedule", {})
+    data.setdefault("overrides", {})
+    data.setdefault("ui_locked", False)
+    data.setdefault("generator_locked", False)
+    data["_runtime_schedule"] = apply_overrides(
         data["schedule"],
         data["overrides"]
     )
 
     return data
+
 
 
 def list_month_files() -> List[Tuple[int, int, Path]]:

@@ -1,9 +1,9 @@
-from datetime import datetime, date
+from datetime import datetime
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QComboBox, QLabel, QGridLayout, QDialog, QScrollArea,
-    QFileDialog, QMessageBox, QPushButton
+    QFileDialog, QPushButton
 )
 from PyQt6.QtCore import Qt
 
@@ -12,7 +12,7 @@ from desktop_app.calendar_widget import CalendarWidget
 from desktop_app.employees_widget import EmployeesWidget
 from desktop_app.ui.admin.admin_window import AdminWindow
 from desktop_app.export.excel_export import export_schedule_to_excel
-
+from desktop_app.msgbox import question, error, info, warning
 
 MONTH_NAMES = {
     1: "Януари", 2: "Февруари", 3: "Март",
@@ -24,10 +24,13 @@ MONTH_NAMES = {
 
 class MainWindow(QMainWindow):
     """
-        Main application window for managing monthly work schedules.
-        Coordinates month selection, schedule generation, manual overrides,
-        employee and admin management, locking workflow, and Excel export.
-        Acts as the central controller between UI widgets and the backend API.
+        Main application window for the work schedule manager.
+            - Coordinates year and month selection
+            - Controls schedule generation and regeneration flow
+            - Manages manual override mode and locking workflow
+            - Provides access to employee and monthly admin management
+            - Acts as the central UI controller between widgets and the backend API
+            - Handles validation, user feedback, and export operations
     """
 
     def __init__(self):
@@ -63,6 +66,11 @@ class MainWindow(QMainWindow):
 
         grid.addWidget(QLabel("Година:"), 0, 0)
         grid.addWidget(QLabel("Месец:"), 0, 1)
+
+        self.validation_label = QLabel("")
+        self.validation_label.setStyleSheet("color: red; font-weight: bold;")
+        self.validation_label.hide()
+        main_layout.addWidget(self.validation_label)
 
         self.year_select = QComboBox()
         now_year = datetime.now().year
@@ -123,6 +131,12 @@ class MainWindow(QMainWindow):
         self.month_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.month_title.setStyleSheet("font-size: 18px; font-weight: bold;")
         main_layout.addWidget(self.month_title)
+
+        self.validation_label = QLabel("")
+        self.validation_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.validation_label.setStyleSheet("color: red; font-weight: bold;")
+        self.validation_label.hide()
+        main_layout.addWidget(self.validation_label)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -196,16 +210,49 @@ class MainWindow(QMainWindow):
             self.lock_status_label.setText("🆕 Нов месец (не е генериран)")
             self.lock_status_label.setStyleSheet("color: orange; font-weight: bold;")
 
-            self.generate_btn.setEnabled(True)
-
             self.override_btn.setEnabled(False)
             self.admin_btn.setEnabled(False)
+            self.validate_before_generate()
+
             return
 
         self.current_year = year
         self.current_month = month
         self.current_schedule = data["schedule"]
         self.is_locked = bool(data.get("ui_locked", False))
+
+        # 🔒 Generator freeze
+        if data.get("generator_locked"):
+            reason = data.get("freeze_reason")
+
+            if reason == "MIN_EMPLOYEES":
+                msg = "❗ Минимум 4 служители + 1 администратор са нужни за генериране."
+            elif reason == "NO_ADMIN":
+                msg = "❗ Няма избран администратор за текущия месец."
+            else:
+                msg = "❗ Месецът е временно замразен."
+
+            self.lock_status_label.setText(msg)
+            self.lock_status_label.setStyleSheet(
+                "color: red; font-weight: bold;"
+            )
+
+            # ! shows only needed actions
+            self.generate_btn.setEnabled(False)
+            self.override_btn.setEnabled(False)
+            self.clear_btn.setEnabled(False)
+
+            # !!: employees always enabled
+            self.employees_btn.setEnabled(True)
+            self.admin_btn.setEnabled(True)
+
+            # shows the calendar empty but valid
+            self.calendar_widget.set_context(self.client, year, month)
+            self.calendar_widget.set_read_only(True)
+            self.calendar_widget.load(data)
+
+            self.month_title.setText(f"{MONTH_NAMES[month]} {year} г.")
+            return
 
         self.override_enabled = False
         self.override_btn.setChecked(False)
@@ -224,6 +271,7 @@ class MainWindow(QMainWindow):
         ) if self.current_schedule else False
 
         self.generate_btn.setEnabled(not self.is_locked and not has_any_shift)
+        self.validate_before_generate()
 
 
     def toggle_override(self):
@@ -234,12 +282,12 @@ class MainWindow(QMainWindow):
         """
 
         if not self.current_schedule:
-            QMessageBox.warning(self, "Няма график", "Месецът няма график за редакция.")
+            warning(self, "Няма график", "Месецът няма график за редакция.")
             self.override_btn.setChecked(False)
             return
 
         if self.is_locked:
-            QMessageBox.warning(self, "Заключен месец", "Месецът е заключен.")
+            warning(self, "Заключен месец", "Месецът е заключен.")
             self.override_btn.setChecked(False)
             return
 
@@ -284,7 +332,7 @@ class MainWindow(QMainWindow):
         """
 
         if self.is_locked:
-            QMessageBox.information(self, "Заключен месец", "Администрацията не е достъпна.")
+            info(self, "Заключен месец", "Администрацията не е достъпна.")
             return
 
         if not hasattr(self, "admin_window") or self.admin_window is None:
@@ -297,23 +345,32 @@ class MainWindow(QMainWindow):
 
 
     def open_employees(self):
-        """
-            Opens the employees management dialog.
-            Blocks access when the month is locked and reloads
-            the current month after changes are applied.
-        """
-
         if self.is_locked:
             return
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Управление на служители")
+        dialog.setMinimumWidth(720)
+        dialog.setMinimumHeight(420)
 
         layout = QVBoxLayout(dialog)
-        layout.addWidget(EmployeesWidget(self.client))
-        dialog.exec()
 
-        self.load_month()
+        widget = EmployeesWidget(
+            client=self.client,
+            year=self.current_year,
+            month=self.current_month
+        )
+        widget.admin_changed.connect(self.validate_before_generate)
+        layout.addWidget(widget)
+        dialog.exec()
+        self.validate_before_generate()
+
+        if self.current_year and self.current_month:
+            try:
+                self.client.get_schedule(self.current_year, self.current_month)
+                self.load_month()
+            except FileNotFoundError:
+                pass
 
 
     def export_to_excel(self):
@@ -324,7 +381,7 @@ class MainWindow(QMainWindow):
         """
 
         if not self.is_locked:
-            QMessageBox.warning(self, "Експортът е блокиран", "Първо заключи месеца.")
+            warning(self, "Експортът е блокиран", "Първо заключи месеца.")
             return
 
         filename, _ = QFileDialog.getSaveFileName(
@@ -352,23 +409,53 @@ class MainWindow(QMainWindow):
             schedule=self.current_schedule,
         )
 
-        QMessageBox.information(self, "Готово", "Excel файлът е създаден.")
+        info(self, "Готово", "Excel файлът е създаден.")
 
 
     def generate_month(self):
         """
-            Triggers generation of the current month’s schedule.
-            Calls the backend generator, handles errors,
-            and reloads the month on success.
+            Triggers generation of the current month’s schedule
+            after validating required preconditions in the UI.
         """
+
+        if not self.validate_before_generate():
+            return
+
+        employees = self.client.get_employees()
+        if len(employees) < 5:
+            warning(
+                self,
+                "Недостатъчен брой служители",
+                "За генериране са нужни минимум:\n"
+                "• 4 ротационни служители\n"
+                "• 1 администратор"
+            )
+
+            return
+
+        try:
+            data = self.client.get_schedule(self.current_year, self.current_month)
+            month_admin_id = data.get("month_admin_id")
+        except Exception:
+            month_admin_id = None
+
+        if not month_admin_id:
+            warning(
+                self,
+                "Липсва администратор",
+                "Избери администратор за текущия месец\n"
+                "от меню „Служители“."
+            )
+
+            return
 
         try:
             self.client.generate_month(self.current_year, self.current_month)
         except Exception as e:
-            QMessageBox.critical(self, "Грешка", str(e))
+            error(self, "Грешка", str(e))
             return
 
-        QMessageBox.information(self, "Готово", "Месецът е генериран.")
+        info(self, "Готово", "Месецът е генериран.")
         self.load_month()
 
 
@@ -379,15 +466,12 @@ class MainWindow(QMainWindow):
             and reloads the month in an unlocked state.
         """
 
-        reply = QMessageBox.question(
-            self,
-            "Изчистване на графика",
-            "Сигурен ли си, че искаш да изчистиш целия график за месеца?\n\n"
-            "Всички смени ще бъдат премахнати и месецът ще остане отворен.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-
-        if reply != QMessageBox.StandardButton.Yes:
+        if not question(
+                self,
+                "Изчистване на графика",
+                "Сигурен ли си, че искаш да изчистиш целия график за месеца?\n\n"
+                "Всички смени ще бъдат премахнати и месецът ще остане отворен."
+        ):
             return
 
         year = int(self.current_year)
@@ -396,14 +480,14 @@ class MainWindow(QMainWindow):
         try:
             self.client.clear_month(year, month)
         except Exception as e:
-            QMessageBox.critical(
+            error(
                 self,
                 "Грешка",
                 f"Неуспешно изчистване на графика:\n{e}"
             )
             return
 
-        QMessageBox.information(
+        info(
             self,
             "Готово",
             "Графикът е изчистен успешно.\n"
@@ -412,6 +496,32 @@ class MainWindow(QMainWindow):
 
         self.load_month()
 
+    def validate_before_generate(self):
+        employees = self.client.get_employees()
+        admin_id = self.client.get_month_admin(
+            self.current_year,
+            self.current_month
+        )
+
+        if len(employees) < 4:
+            self.validation_label.setText(
+                "❌ Минимум 4 служители са необходими за генериране на график."
+            )
+            self.validation_label.show()
+            self.generate_btn.setEnabled(False)
+            return False
+
+        if not admin_id:
+            self.validation_label.setText(
+                "❌ Избери администратор за текущия месец."
+            )
+            self.validation_label.show()
+            self.generate_btn.setEnabled(False)
+            return False
+
+        self.validation_label.hide()
+        self.generate_btn.setEnabled(True)
+        return True
 
 
 

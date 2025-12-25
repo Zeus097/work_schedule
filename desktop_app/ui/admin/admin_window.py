@@ -5,14 +5,14 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QMessageBox,
-    QComboBox,
     QRadioButton,
-    QButtonGroup
+    QButtonGroup, QMessageBox
 )
 from PyQt6.QtCore import Qt
 
 from desktop_app.api_client import APIClient
+from desktop_app.msgbox import question, warning, error, info
+
 
 
 ALLOWED_SHIFTS = ["", "Д", "В", "Н", "А", "О", "Б"]
@@ -125,7 +125,7 @@ class AdminWindow(QWidget):
         """
 
         if not self.main_window.current_schedule:
-            QMessageBox.warning(
+            warning(
                 self,
                 "Няма данни",
                 "Първо зареди месец от главния екран."
@@ -192,27 +192,21 @@ class AdminWindow(QWidget):
 
 
     def confirm_and_lock(self):
-        """
-            Validates admin selection and locks the current month.
-            Confirms user intent, sets the selected administrator, attempts to lock
-            the month, handles validation errors, and prepares or generates the
-            next month if possible.
-        """
-
         if self.table.rowCount() == 0:
-            QMessageBox.warning(self, "Няма данни", "Първо направи преглед.")
+            warning(self, "Няма данни", "Първо направи преглед.")
             return
 
         admin_id = self._get_selected_admin()
         if not admin_id:
-            QMessageBox.warning(self, "Липсва админ", "Избери администратор.")
+            warning(self, "Липсва администратор", "Избери администратор.")
             return
 
         reply = QMessageBox.question(
             self,
             "Потвърждение",
             "Сигурен ли си?\nСлед заключване графикът не може да се променя.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
@@ -220,56 +214,27 @@ class AdminWindow(QWidget):
         year = int(self.main_window.current_year)
         month = int(self.main_window.current_month)
 
-
         try:
-            self.client.set_admin(admin_id)
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Грешка",
-                f"Неуспешна смяна на администратор:\n{e}"
-            )
-            return
-
-        result = self.client.lock_month(year, month)
-
-
-        if not result.get("ok", True):
-            summary = self._summarize_lock_errors(result.get("errors"))
-            self._show_lock_errors_dialog(summary)
-            return
-
-        ny, nm = next_year_month(year, month)
-
-        try:
-            try:
-                self.client.get_schedule(ny, nm)
-            except FileNotFoundError:
-                self.client.generate_month(ny, nm, strict=False)
+            self.client.set_month_admin(year, month, int(admin_id))
+            result = self.client.lock_month(year, month)
 
         except Exception as e:
+            error(self, "Грешка", str(e))
+            return
+
+        if not result.get("ok"):
             QMessageBox.warning(
                 self,
-                "Заключването е отказано",
-                f"Следващият месец ({nm:02d}.{ny}) не може да бъде подготвен.\n\n"
-                f"Причина:\n{e}\n\n"
-                f"Коригирай текущия месец и опитай отново."
+                "Неуспешно",
+                result.get("message", "Месецът не може да бъде заключен.")
             )
+            return
 
-        try:
-            self.main_window.year_select.setCurrentText(str(ny))
-            self.main_window.month_select.setCurrentIndex(nm - 1)
-        except Exception:
-            pass
-
-        QMessageBox.information(
-            self,
-            "Заключено",
-            "Месецът е успешно заключен."
-        )
+        QMessageBox.information(self, "Успешно", "Графикът беше успешно заключен.")
 
         self.main_window.load_month()
         self.close()
+
 
     def _summarize_lock_errors(self, errors: list[dict]) -> str:
         """
@@ -353,8 +318,9 @@ class AdminWindow(QWidget):
         reply = QMessageBox.question(
             self,
             "Потвърждение",
-            "Сигурен ли си?\nТози месец ще стане новото начало за всички следващи графици.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            "Сигурен ли си?\nТекущият месец ще бъде използван като начало за следващия.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
 
         if reply != QMessageBox.StandardButton.Yes:
@@ -379,5 +345,12 @@ class AdminWindow(QWidget):
             "Текущият месец е приет като ново начало.\n"
             "Следващите месеци ще се генерират от него."
         )
+
+
+    def update_ui_state(self):
+        self.reload_month()
+        self.lock_btn.setDisabled(True)
+        self.accept_btn.setDisabled(True)
+
 
 

@@ -6,10 +6,10 @@ from scheduler.api.views import (
     EmployeeDetailView,
     ScheduleOverrideAPI,
     LockMonthView,
-    SetAdminView,
     ClearScheduleAPI,
     ClearMonthScheduleAPI,
     AcceptMonthAsStartAPI,
+    SetMonthAdminView,
 )
 
 
@@ -23,10 +23,11 @@ urlpatterns = [
     path('employees/<int:id>/', EmployeeDetailView.as_view(), name='api_employee_detail'),
     path("meta/", include("scheduler.api.meta.urls")),
     path("schedule/<int:year>/<int:month>/lock/", LockMonthView.as_view(), name="api_lock_month"),
-    path("admin/set/", SetAdminView.as_view(), name="api_set_admin"),
     path("schedule/<int:year>/<int:month>/clear/", ClearScheduleAPI.as_view(),),
     path("schedule/<int:year>/<int:month>/clear/", ClearMonthScheduleAPI.as_view(),),
     path("schedule/<int:year>/<int:month>/accept-as-start/", AcceptMonthAsStartAPI.as_view(),),
+    path("schedule/<int:year>/<int:month>/admin/", SetMonthAdminView.as_view(), name="api_set_month_admin"),
+
 ]
 
 

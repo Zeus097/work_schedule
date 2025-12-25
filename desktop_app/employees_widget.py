@@ -1,41 +1,68 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QRegularExpression
+from PyQt6.QtCore import Qt, QRegularExpression, pyqtSignal
 from PyQt6.QtGui import QRegularExpressionValidator
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QLineEdit, QLabel, QMessageBox
+    QPushButton, QLineEdit, QLabel, QMessageBox,
+    QRadioButton, QButtonGroup
 )
+from desktop_app.msgbox import question, warning, error, info
+
+
 
 
 class EmployeesWidget(QWidget):
+    admin_changed = pyqtSignal()
+
     """
         UI widget for managing employees.
-        Displays a list of employees and provides CRUD operations
-        with basic validation and backend
-        synchronization via the API client.
-    """
+            - Displays all active employees in a tabular view
+            - Supports creating, updating, and deleting employees
+            - Syncs employee data with the backend API
+            - Acts as the entry point for selecting the monthly administrator
+            - Remains accessible even when no schedule is generated
+        """
 
-    def __init__(self, client):
+    def __init__(self, client, year: int, month: int):
         super().__init__()
         self.client = client
+        self.year = year
+        self.month = month
+
         self.employees = []
+
+        self.admin_group = QButtonGroup(self)
+        self.admin_group.setExclusive(True)
+        self.current_month_admin_id = None
 
         self._build_ui()
         self.reload()
 
+
     def _build_ui(self):
         """
             Builds the employees management UI.
-            Creates the table, input fields, and action buttons,
-            and wires user interactions to their handlers.
+                - Renders the employees table (ID, full name, card number)
+                - Provides input fields for adding and editing employees
+                - Adds action buttons for create, update, and delete
+                - Handles row selection and form synchronization
+                - Serves as the base UI for assigning roles (incl. monthly admin)
         """
 
         layout = QVBoxLayout(self)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["ID", "Име", "Служебен №"])
+        self.table.setMinimumWidth(680)
+        self.table.setColumnWidth(0, 60)
+        self.table.setColumnWidth(1, 260)
+        self.table.setColumnWidth(2, 120)
+        self.table.setColumnWidth(3, 140)
+
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(
+            ["ID", "Име", "Служебен №", "Администратор"]
+        )
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -73,9 +100,20 @@ class EmployeesWidget(QWidget):
     def reload(self):
         """
             Reloads the employees list from the backend.
-            Fetches employees, sorts them by name, populates the table,
-            and refreshes column sizing and selection state.
+                - Fetches all employees via the API
+                - Sorts them alphabetically by full name
+                - Rebuilds the table rows and admin radio buttons
+                - Preserves the current monthly administrator selection
+                - Refreshes column sizing and clears invalid selections
         """
+
+        try:
+            self.current_month_admin_id = self.client.get_month_admin(
+                year=self.year,
+                month=self.month
+            )
+        except Exception:
+            self.current_month_admin_id = None
 
         try:
             self.employees = self.client.get_employees()
@@ -85,18 +123,52 @@ class EmployeesWidget(QWidget):
 
         self.employees = sorted(self.employees, key=lambda x: (x.get("full_name") or ""))
         self.table.setRowCount(len(self.employees))
+        self.admin_group = QButtonGroup(self)
+        self.admin_group.setExclusive(True)
+
+        self.table.setRowCount(len(self.employees))
+
         for r, emp in enumerate(self.employees):
             emp_id = str(emp.get("id", ""))
             name = str(emp.get("full_name", ""))
             card = str(emp.get("card_number") or "")
 
-            for c, val in enumerate([emp_id, name, card]):
-                it = QTableWidgetItem(val)
-                it.setTextAlignment(Qt.AlignmentFlag.AlignCenter if c != 1 else Qt.AlignmentFlag.AlignLeft)
-                self.table.setItem(r, c, it)
+            # ID
+            it_id = QTableWidgetItem(emp_id)
+            it_id.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table.setItem(r, 0, it_id)
+
+            # Name
+            it_name = QTableWidgetItem(name)
+            it_name.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
+            self.table.setItem(r, 1, it_name)
+
+            # Card
+            it_card = QTableWidgetItem(card)
+            it_card.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table.setItem(r, 2, it_card)
+
+            # Admin radio
+            radio = QRadioButton()
+            self.admin_group.addButton(radio)
+            cell = QWidget()
+            lay = QHBoxLayout(cell)
+            lay.addWidget(radio)
+            lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lay.setContentsMargins(0, 0, 0, 0)
+            self.table.setCellWidget(r, 3, cell)
+
+            if emp_id == self.current_month_admin_id:
+                radio.setChecked(True)
+
+            radio.toggled.connect(
+                lambda checked, eid=emp_id: self._on_admin_selected(eid, checked)
+            )
+
+        self.table.setColumnHidden(0, True)
 
         self.table.resizeColumnsToContents()
-        self.table.setColumnWidth(1, 280)
+        self.table.setColumnWidth(1, 260)
 
     def _selected_emp(self):
         row = self.table.currentRow()
@@ -116,7 +188,7 @@ class EmployeesWidget(QWidget):
         card = self.card_in.text().strip()
 
         if not name:
-            QMessageBox.warning(self, "Липсва име", "Въведи име.")
+            warning(self, "Липсва име", "Въведи име.")
             return
 
         try:
@@ -125,7 +197,7 @@ class EmployeesWidget(QWidget):
                 "card_number": card or None
             })
         except Exception as e:
-            QMessageBox.critical(self, "Грешка", f"Не успях да добавя:\n{e}")
+            error(self, "Грешка", f"Не успях да добавя:\n{e}")
             return
 
         self.name_in.clear()
@@ -160,25 +232,60 @@ class EmployeesWidget(QWidget):
     def delete_employee(self):
         emp = self._selected_emp()
         if not emp:
-            QMessageBox.warning(self, "Няма избор", "Избери служител от списъка.")
+            warning(self, "Няма избор", "Избери служител от списъка.")
             return
 
         emp_id = emp["id"]
         name = emp.get("full_name", "")
 
-        ok = QMessageBox.question(self, "Потвърди", f"Да изтрия ли:\n{name} ?")
-        if ok != QMessageBox.StandardButton.Yes:
+        if not question(self, "Потвърди", f"Да изтрия ли:\n{name}?"):
+            return
+
+        try:
+            admin_id = self.client.get_month_admin(self.year, self.month)
+        except Exception:
+            admin_id = None
+
+        if admin_id and str(emp_id) == str(admin_id):
+            warning(
+                self,
+                "Администратор",
+                "Не можеш да изтриеш администратора за текущия месец."
+            )
             return
 
         try:
             self.client.delete_employee(emp_id)
         except Exception as e:
-            QMessageBox.critical(self, "Грешка", f"Не успях да изтрия:\n{e}")
+            error(self, "Грешка", f"Не успях да изтрия:\n{e}")
             return
 
         self.name_in.clear()
         self.card_in.clear()
         self.reload()
+
+
+    def _on_admin_selected(self, emp_id: str, checked: bool):
+        if not checked:
+            return
+
+        self.current_month_admin_id = emp_id
+
+        try:
+            self.client.set_month_admin(
+                self.year,
+                self.month,
+                emp_id
+            )
+
+            self.admin_changed.emit()
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Грешка",
+                f"Неуспешно задаване на администратор:\n{e}"
+            )
+
 
 
 
