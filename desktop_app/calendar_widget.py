@@ -12,13 +12,20 @@ from PyQt6.QtWidgets import (
 SHIFT_OPTIONS = ["", "Д", "В", "Н", "А", "О", "Б"]
 COUNT_AS_WORKED: Set[str] = {"Д", "В", "Н", "А", "О", "Б"}
 
-DAY_GREEN = QColor(160, 215, 140)
-DAY_RED = QColor(235, 120, 120)
-NAME_BG = QColor(210, 210, 210)
-GRID_BG = QColor(45, 45, 45)
-CELL_BG = QColor(55, 55, 55)
-TEXT_LIGHT = QColor(240, 240, 240)
+DAY_GREEN = QColor(198, 224, 180)   # делник
+DAY_RED = QColor(244, 177, 177)     # уикенд / празник
+GRID_BG = QColor(230, 230, 230)     # header / grid
+CELL_BG = QColor(255, 255, 255)     # бял фон
 TEXT_DARK = QColor(0, 0, 0)
+
+EMPLOYEE_NAME_COLORS = [
+    QColor(255, 217, 102),
+    QColor(155, 194, 230),
+    QColor(169, 209, 142),
+    QColor(244, 176, 132),
+    QColor(197, 224, 180),
+]
+
 
 
 @dataclass
@@ -128,7 +135,8 @@ class CalendarWidget(QWidget):
 
             self._cell(r, 0, str(i + 1), center=True)
             self._cell(r, 1, str(self._count_worked(str(emp.emp_id))), center=True)
-            self._cell(r, 2, emp.full_name, bg=NAME_BG, fg=TEXT_DARK, bold=True)
+            name_bg = EMPLOYEE_NAME_COLORS[i % len(EMPLOYEE_NAME_COLORS)]
+            self._cell(r, 2, emp.full_name, bg=name_bg, fg=TEXT_DARK, bold=True)
 
             for j, day in enumerate(self._days):
                 col = 3 + j
@@ -137,7 +145,8 @@ class CalendarWidget(QWidget):
                 if self._override_mode and not self._read_only:
                     self.table.setCellWidget(r, col, self._combo(emp, day, val))
                 else:
-                    self._cell(r, col, val, center=True)
+                    bg = DAY_RED if day in self._weekends or day in self._holidays else DAY_GREEN
+                    self._cell(r, col, val, center=True, bg=bg, fg=TEXT_DARK)
 
             self._cell(r, cols - 1, emp.card_number, center=True)
 
@@ -170,7 +179,7 @@ class CalendarWidget(QWidget):
                 day = int(self.table.horizontalHeaderItem(col).text())
                 it.setBackground(QBrush(DAY_RED if day in self._weekends or day in self._holidays else DAY_GREEN))
             else:
-                it.setBackground(QBrush(GRID_BG))
+                it.setBackground(QBrush(QColor(240, 240, 240)))
 
             self.table.setItem(0, col, it)
 
@@ -262,14 +271,18 @@ class CalendarWidget(QWidget):
     def _cell(self, r, c, text, bg=None, fg=None, bold=False, center=False):
         it = QTableWidgetItem(str(text))
         it.setFlags(Qt.ItemFlag.ItemIsEnabled)
+
         if center:
             it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
         if bold:
             f = it.font()
             f.setBold(True)
             it.setFont(f)
+
         it.setBackground(QBrush(bg or CELL_BG))
-        it.setForeground(QBrush(fg or TEXT_LIGHT))
+        it.setForeground(QBrush(fg or TEXT_DARK))
+
         self.table.setItem(r, c, it)
 
     def clear(self):

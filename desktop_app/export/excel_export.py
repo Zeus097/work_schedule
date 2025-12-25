@@ -6,9 +6,9 @@ from openpyxl.utils import get_column_letter
 from scheduler.api.utils.holidays import get_holidays_for_month
 
 
-# === FILLS (1:1 с Excel примера) ===
-RED_FILL = PatternFill("solid", fgColor="FF6666")     # уикенд / празник
-GREEN_FILL = PatternFill("solid", fgColor="99CC66")  # работен ден
+
+RED_FILL = PatternFill("solid", fgColor="FF6666")
+GREEN_FILL = PatternFill("solid", fgColor="99CC66")
 HEADER_FILL = PatternFill("solid", fgColor="E6E6E6")
 
 EMPLOYEE_ROW_FILLS = [
@@ -26,7 +26,7 @@ THIN_BORDER = Border(
     bottom=Side(style="thin"),
 )
 
-# ⬅️ ВСИЧКО БЕЗ ПРАЗНО СЕ БРОИ
+
 COUNT_AS_WORKED = {"Д", "В", "Н", "А", "О", "Б"}
 
 
@@ -38,7 +38,7 @@ def export_schedule_to_excel(
     month_name: str,
     month: int,
     year: int,
-    employees: list[dict],      # [{"full_name": "...", "card_number": "..."}]
+    employees: list[dict],
     days: list[int],
     schedule: dict,
 ):
@@ -69,7 +69,7 @@ def export_schedule_to_excel(
     ws.cell(4, 1, f"{month_name} {year} г.").font = Font(size=12, bold=True)
     ws.cell(4, 1).alignment = Alignment(horizontal="center")
 
-    # ===== TABLE HEADER =====
+
     headers = ["№", "Бр.", "Име, Презиме, Фамилия"]
     for col, text in enumerate(headers, start=1):
         c = ws.cell(row=5, column=col, value=text)
@@ -77,7 +77,7 @@ def export_schedule_to_excel(
         c.border = THIN_BORDER
         c.alignment = Alignment(horizontal="center")
 
-    # ===== DAYS HEADER =====
+
     for idx, day in enumerate(days):
         col = FIRST_DAY_COL + idx
         c = ws.cell(row=5, column=col, value=day)
