@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from datetime import date
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
@@ -42,6 +44,8 @@ def export_schedule_to_excel(
     days: list[int],
     schedule: dict,
 ):
+    schedule = deepcopy(schedule)
+
     wb = Workbook()
     ws = wb.active
     ws.title = "График"
@@ -94,9 +98,12 @@ def export_schedule_to_excel(
     # ===== BODY =====
     for idx, emp in enumerate(employees):
         row = 6 + idx
+
+        emp_id = str(emp["id"])
         name = emp["full_name"]
         card = emp.get("card_number", "")
-        emp_days = schedule.get(name, {})
+
+        emp_days = schedule.get(emp_id, {})
 
         worked_days = sum(
             1 for d in days if emp_days.get(d, "") in COUNT_AS_WORKED
