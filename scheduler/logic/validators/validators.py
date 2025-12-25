@@ -22,10 +22,15 @@ def validate_month(
     crisis_mode: bool,
     weekdays: Dict[int, int],
 ) -> List[Tuple[str, int, str]]:
+    """
+        Validates a monthly schedule against rotation and coverage rules.
+        Checks per-employee shift sequences (including admin constraints),
+        enforces rest and rotation rules, and verifies that each required
+        shift is covered exactly once per day.
+    """
 
     errors: List[Tuple[str, int, str]] = []
 
-    # === 1. Проверка по служител ===
     for employee, days in schedule.items():
         prev_shift: ShiftCode | None = None
         last_work_day: int | None = None
@@ -54,7 +59,6 @@ def validate_month(
             prev_shift = shift_lat
             last_work_day = day
 
-    # === 2. ДНЕВНО ПОКРИТИЕ ===
     days = next(iter(schedule.values())).keys()
 
     for day in days:
@@ -72,3 +76,5 @@ def validate_month(
                 )
 
     return errors
+
+

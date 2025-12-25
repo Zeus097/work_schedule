@@ -10,7 +10,6 @@ class EmployeeService:
         Returns a list with names, that the generator can use.
         """
 
-
         month_start = date(year, month, 1)
         if month == 12:
             month_end = date(year + 1, 1, 1)

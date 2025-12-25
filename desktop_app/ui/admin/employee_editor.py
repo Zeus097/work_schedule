@@ -1,7 +1,12 @@
 from PyQt6.QtWidgets import QLineEdit, QVBoxLayout, QLabel, QDialogButtonBox, QDialog
-from PyQt6.QtCore import QDate
 
 class EmployeeEditorDialog(QDialog):
+    """
+        Modal dialog for editing basic employee data.
+        Provides input fields for employee name and activation start day,
+        and returns the updated values upon confirmation.
+    """
+
     def __init__(self, employee_data, parent=None):
         super().__init__(parent)
         self.employee_data = employee_data

@@ -10,20 +10,27 @@ from PyQt6.QtWidgets import (
 
 class EmployeesWidget(QWidget):
     """
-    Управление на служители:
-    - full_name
-    - card_number (незадължително)
+        UI widget for managing employees.
+        Displays a list of employees and provides CRUD operations
+        with basic validation and backend
+        synchronization via the API client.
     """
 
     def __init__(self, client):
         super().__init__()
         self.client = client
-        self.employees = []  # list[dict]
+        self.employees = []
 
         self._build_ui()
         self.reload()
 
     def _build_ui(self):
+        """
+            Builds the employees management UI.
+            Creates the table, input fields, and action buttons,
+            and wires user interactions to their handlers.
+        """
+
         layout = QVBoxLayout(self)
 
         self.table = QTableWidget()
@@ -33,16 +40,13 @@ class EmployeesWidget(QWidget):
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.table)
-
         form = QHBoxLayout()
         form.addWidget(QLabel("Име:"))
         self.name_in = QLineEdit()
         form.addWidget(self.name_in)
-
         form.addWidget(QLabel("Служебен №:"))
         self.card_in = QLineEdit()
         self.card_in.setPlaceholderText("цифрите на пропуска")
-        # ✅ само цифри (може да е празно)
         self.card_in.setValidator(QRegularExpressionValidator(QRegularExpression(r"^\d*$")))
         form.addWidget(self.card_in)
 
@@ -65,7 +69,14 @@ class EmployeesWidget(QWidget):
 
         self.table.itemSelectionChanged.connect(self._on_select)
 
+
     def reload(self):
+        """
+            Reloads the employees list from the backend.
+            Fetches employees, sorts them by name, populates the table,
+            and refreshes column sizing and selection state.
+        """
+
         try:
             self.employees = self.client.get_employees()
         except Exception as e:
@@ -73,7 +84,6 @@ class EmployeesWidget(QWidget):
             self.employees = []
 
         self.employees = sorted(self.employees, key=lambda x: (x.get("full_name") or ""))
-
         self.table.setRowCount(len(self.employees))
         for r, emp in enumerate(self.employees):
             emp_id = str(emp.get("id", ""))
@@ -169,3 +179,8 @@ class EmployeesWidget(QWidget):
         self.name_in.clear()
         self.card_in.clear()
         self.reload()
+
+
+
+
+

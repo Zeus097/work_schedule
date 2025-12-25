@@ -44,6 +44,18 @@ def export_schedule_to_excel(
     days: list[int],
     schedule: dict,
 ):
+    """
+        Exports a monthly employee work schedule to a formatted Excel file.
+
+        Builds an Excel worksheet with company header, day-by-day schedule,
+        worked-days count, holiday/weekend highlighting, and a legend.
+        Applies consistent styling, borders, and column widths.
+
+        Assumes schedule keys are employee IDs as strings and day values
+        contain shift codes used for worked-day calculation.
+    """
+
+
     schedule = deepcopy(schedule)
 
     wb = Workbook()

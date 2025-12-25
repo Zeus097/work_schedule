@@ -9,9 +9,6 @@ from scheduler.logic.cycle_state import load_last_cycle_state
 from scheduler.api.utils.holidays import get_holidays_for_month
 
 
-# ===============================
-# 1️⃣ ЦИКЪЛ НА СМЕНИТЕ (ЧОВЕШКИ)
-# ===============================
 
 CYCLE = [
     "Д", "Д", "Д", "Д",
@@ -31,11 +28,14 @@ def _build_cycle(start_index: int) -> deque:
     return dq
 
 
-# ===============================
-# 2️⃣ ГЕНЕРАТОР
-# ===============================
-
 def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
+    """
+        Generates a full monthly work schedule using rotation cycles.
+        Assigns daily shifts to active employees, enforces admin and coverage
+        rules, optionally fails on impossible coverage (strict mode), and
+        returns the generated schedule with metadata.
+    """
+
     _, days_in_month = calendar.monthrange(year, month)
     holidays = set(get_holidays_for_month(year, month))
 
@@ -61,7 +61,6 @@ def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
 
     last_state = load_last_cycle_state() or {}
 
-    # 🧹 SOFT + празен старт → нова ротация
     if not strict:
         last_state = {}
 
@@ -95,7 +94,6 @@ def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
                     f"Невъзможно покритие за ден {day}. Покрито: {available}"
                 )
             else:
-                # 🔑 SOFT MODE → въртим циклите и продължаваме
                 for emp_id in workers:
                     cycles[emp_id].rotate(-1)
                 continue

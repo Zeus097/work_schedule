@@ -11,19 +11,14 @@ from scheduler.logic.json_help_functions import _load_json, _save_json_with_lock
 MONTH_PATTERN = re.compile(r"^(\d{4})-(\d{2})\.json$")
 
 
-# =====================================================
-# PATH HELPERS
-# =====================================================
+
 def get_month_path(year: int, month: int) -> Path:
     return DATA_DIR / f"{year:04d}-{month:02d}.json"
 
 
-# =====================================================
-# SAVE / LOAD
-# =====================================================
 def save_month(year: int, month: int, data: Dict[str, Any]) -> None:
     """
-    Записва месец YYYY-MM.json (safe write).
+    Saves month YYYY-MM.json (safe write).
     """
     path = get_month_path(year, month)
     _save_json_with_lock(path, data)
@@ -31,21 +26,19 @@ def save_month(year: int, month: int, data: Dict[str, Any]) -> None:
 
 def load_month(year: int, month: int) -> Dict[str, Any]:
     """
-    Зарежда месец YYYY-MM.json.
-    ВАЖНО: НЕ пипа генератора, само прилага overrides.
+        Loads month YYYY-MM.json.
+        !!!: Only applies overrides.
     """
     path = get_month_path(year, month)
 
     data = _load_json(path)
 
-    # гаранция за ключове
     if "schedule" not in data:
         data["schedule"] = {}
 
     if "overrides" not in data:
         data["overrides"] = {}
 
-    # apply overrides върху копие
     data["schedule"] = apply_overrides(
         data["schedule"],
         data["overrides"]
@@ -54,12 +47,9 @@ def load_month(year: int, month: int) -> Dict[str, Any]:
     return data
 
 
-# =====================================================
-# LIST / LATEST
-# =====================================================
 def list_month_files() -> List[Tuple[int, int, Path]]:
     """
-    Връща списък от налични месечни файлове (year, month, path).
+        Returns list of existing month files (year, month, path).
     """
     result: List[Tuple[int, int, Path]] = []
 
@@ -84,7 +74,7 @@ def list_month_files() -> List[Tuple[int, int, Path]]:
 
 def get_latest_month() -> Optional[Tuple[int, int, Dict[str, Any]]]:
     """
-    Връща (year, month, data) за последния наличен месец.
+        Returns (year, month, data) for the last available month.
     """
     months = list_month_files()
     if not months:

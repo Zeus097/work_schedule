@@ -28,7 +28,6 @@ def _get_employee_name_map(self) -> dict:
 def extract_last_shifts(schedule: dict, days_in_month: int) -> dict:
     result = {}
     for emp_id, days in schedule.items():
-        # days е dict с ключове "1","2"... или 1,2...
         for day in range(days_in_month, 0, -1):
             shift = days.get(str(day), days.get(day))
             if shift and str(shift).strip():
@@ -46,7 +45,24 @@ def next_year_month(year: int, month: int) -> tuple[int, int]:
 
 
 class AdminWindow(QWidget):
+    """
+       Administrative panel for finalizing a monthly schedule.
+
+       Allows selecting a single administrator, previewing last shifts per employee,
+       locking the current month, validating coverage constraints, and preparing
+       the next month. Also supports accepting the current month as a new generation
+       baseline for future schedules.
+       Relies on the main window for the active year/month and schedule data,
+       and communicates with the backend via APIClient.
+    """
+
     def __init__(self, main_window):
+        """
+            Initializes the admin window and binds it to the main application window.
+            Sets up API access, stores a reference to the main window,
+            initializes internal state, and builds the UI.
+        """
+
         super().__init__()
 
         self.client = APIClient()
@@ -63,8 +79,14 @@ class AdminWindow(QWidget):
 
         self.build_ui()
 
-    # =====================================================
+
     def build_ui(self):
+        """
+            Constructs the admin panel UI layout and widgets.
+            Creates labels, table, and action buttons, and connects
+            user interactions to their corresponding handlers.
+        """
+
         layout = QVBoxLayout(self)
 
         title = QLabel("Администрация")
@@ -94,8 +116,14 @@ class AdminWindow(QWidget):
         self.accept_btn.clicked.connect(self.accept_as_start)
         layout.addWidget(self.accept_btn)
 
-    # =====================================================
+
     def load_data(self):
+        """
+           Loads schedule data from the main window into the admin table.
+           Derives the number of days in the month, extracts each employee’s
+           last worked shift, populates the table, and resets admin selection.
+        """
+
         if not self.main_window.current_schedule:
             QMessageBox.warning(
                 self,
@@ -106,17 +134,15 @@ class AdminWindow(QWidget):
 
         self.current_schedule = self.main_window.current_schedule
 
-        # дни в месеца
         all_days = set()
         for emp_days in self.current_schedule.values():
-            # emp_days ключовете може да са "1","2"... или 1,2...
             for k in emp_days.keys():
                 try:
                     all_days.add(int(k))
                 except Exception:
                     pass
-        self.days_in_month = max(all_days) if all_days else 0
 
+        self.days_in_month = max(all_days) if all_days else 0
         last_shifts = extract_last_shifts(self.current_schedule, self.days_in_month)
 
         employees = {
@@ -132,18 +158,18 @@ class AdminWindow(QWidget):
             row = self.table.rowCount()
             self.table.insertRow(row)
 
-            # --- Админ радио ---
+
             radio = QRadioButton()
             self.admin_group.addButton(radio)
             self.table.setCellWidget(row, 0, radio)
 
-            # --- Име (показваме име, пазим ID) ---
+
             name_item = QTableWidgetItem(full_name)
             name_item.setData(Qt.ItemDataRole.UserRole, emp_id)
             name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 1, name_item)
 
-            # --- Последна смяна ---
+
             last_shift = last_shifts.get(emp_id, "")
 
             item = QTableWidgetItem(last_shift if last_shift else "—")
@@ -152,19 +178,27 @@ class AdminWindow(QWidget):
 
             self.table.setItem(row, 2, item)
 
-    # =====================================================
+
     def _get_selected_admin(self) -> str | None:
         """
-        Връща employee_id на избрания администратор
+            Returns employee_id to the choosen administrator.
         """
+
         for row, btn in enumerate(self.admin_group.buttons()):
             if btn.isChecked():
                 item = self.table.item(row, 1)
                 return str(item.data(Qt.ItemDataRole.UserRole))
         return None
 
-    # =====================================================
+
     def confirm_and_lock(self):
+        """
+            Validates admin selection and locks the current month.
+            Confirms user intent, sets the selected administrator, attempts to lock
+            the month, handles validation errors, and prepares or generates the
+            next month if possible.
+        """
+
         if self.table.rowCount() == 0:
             QMessageBox.warning(self, "Няма данни", "Първо направи преглед.")
             return
@@ -205,7 +239,6 @@ class AdminWindow(QWidget):
             self._show_lock_errors_dialog(summary)
             return
 
-
         ny, nm = next_year_month(year, month)
 
         try:
@@ -213,6 +246,7 @@ class AdminWindow(QWidget):
                 self.client.get_schedule(ny, nm)
             except FileNotFoundError:
                 self.client.generate_month(ny, nm, strict=False)
+
         except Exception as e:
             QMessageBox.warning(
                 self,
@@ -221,8 +255,6 @@ class AdminWindow(QWidget):
                 f"Причина:\n{e}\n\n"
                 f"Коригирай текущия месец и опитай отново."
             )
-
-
 
         try:
             self.main_window.year_select.setCurrentText(str(ny))
@@ -240,6 +272,12 @@ class AdminWindow(QWidget):
         self.close()
 
     def _summarize_lock_errors(self, errors: list[dict]) -> str:
+        """
+            Aggregates and formats lock validation errors for user display.
+            Groups errors by employee (one per employee), converts employee IDs
+            to names, and produces a concise, human-readable summary with hints.
+        """
+
         id_to_name = {
             str(e["id"]): e["full_name"]
             for e in self.client.get_employees()
@@ -282,7 +320,14 @@ class AdminWindow(QWidget):
 
         return "\n".join(lines)
 
+
     def _show_lock_errors_dialog(self, summary_text: str):
+        """
+            Displays a warning dialog with lock validation error details.
+            Shows a summarized explanation of why the month cannot be locked
+            and instructs the user to return and correct the schedule.
+        """
+
         dialog = QMessageBox(self)
         dialog.setWindowTitle("Месецът не може да бъде заключен")
         dialog.setIcon(QMessageBox.Icon.Warning)
@@ -297,7 +342,14 @@ class AdminWindow(QWidget):
 
         dialog.exec()
 
+
     def accept_as_start(self):
+        """
+            Marks the current month as the new generation baseline.
+            Confirms user intent and updates backend state so future schedules
+            are generated starting from this month.
+        """
+
         reply = QMessageBox.question(
             self,
             "Потвърждение",

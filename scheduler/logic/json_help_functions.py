@@ -7,7 +7,7 @@ import portalocker
 
 def _load_json(path: Path) -> Dict[str, Any]:
     """
-    Read JSON file and return dict.
+        Read JSON file and return dict.
     """
     if not path.exists():
         raise FileNotFoundError(f"JSON файлът не съществува: {path}")
@@ -18,7 +18,7 @@ def _load_json(path: Path) -> Dict[str, Any]:
 
 def _save_json_with_lock(path: Path, data: Dict[str, Any]) -> None:
     """
-    Saves JSON file with lock and a safe recording.
+        Saves JSON file with lock and a safe recording.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
@@ -47,8 +47,9 @@ DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 CYCLE_STATE_FILE = DATA_DIR / "last_cycle_state.json"
 
 
-# -------- generic helpers --------
 def load_json_file(name: str) -> Dict[str, Any]:
+    """ generic helpers """
+
     path = DATA_DIR / f"{name}.json"
     return _load_json(path)
 
@@ -61,8 +62,8 @@ def write_json_file(data: Dict[str, Any], name: str) -> None:
 # -------- cycle state helpers --------
 def load_cycle_state() -> Dict[str, Any]:
     """
-    Load last known cycle state.
-    If missing → return empty dict (first run).
+        Load last known cycle state.
+        If missing → return empty dict (first run).
     """
     if not CYCLE_STATE_FILE.exists():
         return {}
@@ -71,6 +72,9 @@ def load_cycle_state() -> Dict[str, Any]:
 
 def save_cycle_state(state: Dict[str, Any]) -> None:
     """
-    Persist cycle index per employee.
+        Persist cycle index per employee.
     """
     _save_json_with_lock(CYCLE_STATE_FILE, state)
+
+
+

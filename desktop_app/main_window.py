@@ -1,6 +1,4 @@
 from datetime import datetime, date
-from dateutil.relativedelta import relativedelta
-import calendar
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -25,6 +23,13 @@ MONTH_NAMES = {
 
 
 class MainWindow(QMainWindow):
+    """
+        Main application window for managing monthly work schedules.
+        Coordinates month selection, schedule generation, manual overrides,
+        employee and admin management, locking workflow, and Excel export.
+        Acts as the central controller between UI widgets and the backend API.
+    """
+
     def __init__(self):
         super().__init__()
 
@@ -46,8 +51,13 @@ class MainWindow(QMainWindow):
         self.init_defaults()
 
 
-    # =====================================================
     def build_ui(self):
+        """
+            Builds the main application UI layout.
+            Creates month/year selectors, action buttons, status indicators,
+            calendar container, and export controls, and wires all UI events.
+        """
+
         main_layout = QVBoxLayout()
         grid = QGridLayout()
 
@@ -78,10 +88,7 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.lock_status_label, 2, 2)
 
         main_layout.addLayout(grid)
-
         tools = QHBoxLayout()
-
-        # Лява колона – инструменти за редакция
         left_tools = QVBoxLayout()
 
         self.override_btn = QPushButton("✏️ Ръчни корекции")
@@ -97,9 +104,7 @@ class MainWindow(QMainWindow):
         left_tools.addStretch()
         tools.addLayout(left_tools)
 
-        # пространство по средата
         tools.addStretch()
-
         main_layout.addLayout(tools)
 
         export_layout = QHBoxLayout()
@@ -136,8 +141,14 @@ class MainWindow(QMainWindow):
         self.generate_btn.setEnabled(False)
         tools.addWidget(self.generate_btn)
 
-    # =====================================================
+
     def init_defaults(self):
+        """
+            Initializes default year and month selections.
+            Sets the current date as the active context, enables the UI,
+            and triggers initial month loading.
+        """
+
         now = datetime.now()
 
         self.year_select.setCurrentIndex(
@@ -151,8 +162,13 @@ class MainWindow(QMainWindow):
         self.load_month()
 
 
-    # =====================================================
     def load_month(self):
+        """
+            Loads or initializes the selected month.
+            Attempts to fetch an existing schedule, handles new (non-generated)
+            months, updates lock state and UI controls, and renders the calendar.
+        """
+
         if not self._ui_ready:
             return
 
@@ -166,37 +182,26 @@ class MainWindow(QMainWindow):
         month = int(month)
 
         try:
-            # ✅ Опит за зареждане на съществуващ месец
             data = self.client.get_schedule(year, month)
 
         except FileNotFoundError:
-            # 🆕 Месецът НЕ съществува → позволяваме стоене върху него
-
             self.current_year = year
             self.current_month = month
             self.current_schedule = {}
             self.is_locked = False
 
-            # изчистваме календара
             self.calendar_widget.clear()
 
             self.month_title.setText(f"{MONTH_NAMES[month]} {year} г.")
             self.lock_status_label.setText("🆕 Нов месец (не е генериран)")
             self.lock_status_label.setStyleSheet("color: orange; font-weight: bold;")
 
-            # 🔥 ключовото: разрешаваме генериране
             self.generate_btn.setEnabled(True)
 
-            # забраняваме действия, докато няма месец
             self.override_btn.setEnabled(False)
             self.admin_btn.setEnabled(False)
-            self.employees_btn.setEnabled(False)
-
             return
 
-        # ===============================
-        # ✅ МЕСЕЦЪТ СЪЩЕСТВУВА
-        # ===============================
         self.current_year = year
         self.current_month = month
         self.current_schedule = data["schedule"]
@@ -214,15 +219,20 @@ class MainWindow(QMainWindow):
         self._update_lock_ui()
         self.month_title.setText(f"{MONTH_NAMES[month]} {year} г.")
 
-        # ✅ Ако графикът е празен (след clear) -> позволяваме генериране
         has_any_shift = any(
             (str(shift).strip() for emp_days in self.current_schedule.values() for shift in emp_days.values())
         ) if self.current_schedule else False
 
         self.generate_btn.setEnabled(not self.is_locked and not has_any_shift)
 
-    # =====================================================
+
     def toggle_override(self):
+        """
+            Toggles manual override mode for the current month.
+            Enables or disables inline shift editing, reloads the schedule,
+            and updates the UI state based on lock and edit mode.
+        """
+
         if not self.current_schedule:
             QMessageBox.warning(self, "Няма график", "Месецът няма график за редакция.")
             self.override_btn.setChecked(False)
@@ -245,8 +255,13 @@ class MainWindow(QMainWindow):
         )
 
 
-    # =====================================================
     def _update_lock_ui(self):
+        """
+            Updates UI elements based on the month lock state.
+            Adjusts status labels and enables or disables actions
+            depending on whether the current month is locked.
+        """
+
         if self.is_locked:
             self.lock_status_label.setText("🔒 Месецът е ЗАКЛЮЧЕН")
             self.lock_status_label.setStyleSheet("color: red; font-weight: bold;")
@@ -260,8 +275,14 @@ class MainWindow(QMainWindow):
 
         self.clear_btn.setEnabled(not self.is_locked and bool(self.current_schedule))
 
-    # =====================================================
+
     def open_admin(self):
+        """
+            Opens the administration panel for the current month.
+            Prevents access if the month is locked and passes the
+            current schedule context to the admin window.
+        """
+
         if self.is_locked:
             QMessageBox.information(self, "Заключен месец", "Администрацията не е достъпна.")
             return
@@ -275,8 +296,13 @@ class MainWindow(QMainWindow):
         self.admin_window.activateWindow()
 
 
-    # =====================================================
     def open_employees(self):
+        """
+            Opens the employees management dialog.
+            Blocks access when the month is locked and reloads
+            the current month after changes are applied.
+        """
+
         if self.is_locked:
             return
 
@@ -290,8 +316,13 @@ class MainWindow(QMainWindow):
         self.load_month()
 
 
-    # =====================================================
     def export_to_excel(self):
+        """
+            Exports the locked monthly schedule to an Excel file.
+            Prompts for a file location, gathers required data,
+            and generates a formatted Excel schedule.
+        """
+
         if not self.is_locked:
             QMessageBox.warning(self, "Експортът е блокиран", "Първо заключи месеца.")
             return
@@ -323,7 +354,14 @@ class MainWindow(QMainWindow):
 
         QMessageBox.information(self, "Готово", "Excel файлът е създаден.")
 
+
     def generate_month(self):
+        """
+            Triggers generation of the current month’s schedule.
+            Calls the backend generator, handles errors,
+            and reloads the month on success.
+        """
+
         try:
             self.client.generate_month(self.current_year, self.current_month)
         except Exception as e:
@@ -333,7 +371,14 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Готово", "Месецът е генериран.")
         self.load_month()
 
+
     def clear_schedule(self):
+        """
+            Clears all shifts for the current month.
+            Confirms user intent, resets the schedule via the backend,
+            and reloads the month in an unlocked state.
+        """
+
         reply = QMessageBox.question(
             self,
             "Изчистване на графика",

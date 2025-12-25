@@ -7,3 +7,5 @@ DATA_DIR.mkdir(exist_ok=True)
 
 BACKUP_DIR = DATA_DIR / "backups"
 BACKUP_DIR.mkdir(exist_ok=True)
+
+CONFIG_FILE = DATA_DIR / "config.json"

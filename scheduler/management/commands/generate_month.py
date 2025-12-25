@@ -4,6 +4,12 @@ from scheduler.logic.generator.generator import generate_new_month
 
 
 class Command(BaseCommand):
+    """
+        Django management command for generating and storing a monthly schedule.
+        Invokes the schedule generator for a given year and month and
+        creates or updates the corresponding MonthRecord entry.
+    """
+
     help = "Генерира нов месец и го записва в MonthRecord"
 
     def add_arguments(self, parser):

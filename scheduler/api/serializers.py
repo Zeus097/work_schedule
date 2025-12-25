@@ -7,7 +7,6 @@ class GenerateMonthSerializer(serializers.Serializer):
     month = serializers.IntegerField(min_value=1, max_value=12)
 
 
-
 class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
@@ -33,11 +32,9 @@ class EmployeeUpdateSerializer(serializers.Serializer):
     end_date = serializers.DateField(required=False)
 
 
-
-
-
-
 class OverrideSerializer(serializers.Serializer):
-    employee_id = serializers.CharField()  # използваш full_name като id
+    employee_id = serializers.CharField()
     day = serializers.IntegerField(min_value=1, max_value=31)
     new_shift = serializers.CharField(max_length=5)
+
+

@@ -3,6 +3,13 @@ from desktop_app.config import API_BASE_URL
 
 
 class APIClient:
+    """
+        HTTP client for communicating with the scheduling backend API.
+        Encapsulates all network operations related to schedules, employees,
+        administration actions, and month lifecycle management, while handling
+        response normalization and error translation for the UI layer.
+    """
+
     def __init__(self):
         self.base = API_BASE_URL
 
@@ -26,7 +33,7 @@ class APIClient:
 
         data = r.json()
 
-        # normalize days -> int
+
         raw_schedule = data.get("schedule", {})
         normalized_schedule = {
             emp: {int(day): shift for day, shift in days.items()}
@@ -118,7 +125,7 @@ class APIClient:
 
         r = requests.post(url, json=payload)
 
-        # ❗ 409 = има BLOCKING грешки
+
         if r.status_code == 409:
             try:
                 data = r.json()

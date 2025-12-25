@@ -12,10 +12,10 @@ from PyQt6.QtWidgets import (
 SHIFT_OPTIONS = ["", "Д", "В", "Н", "А", "О", "Б"]
 COUNT_AS_WORKED: Set[str] = {"Д", "В", "Н", "А", "О", "Б"}
 
-DAY_GREEN = QColor(198, 224, 180)   # делник
-DAY_RED = QColor(244, 177, 177)     # уикенд / празник
-GRID_BG = QColor(230, 230, 230)     # header / grid
-CELL_BG = QColor(255, 255, 255)     # бял фон
+DAY_GREEN = QColor(198, 224, 180)
+DAY_RED = QColor(244, 177, 177)
+GRID_BG = QColor(230, 230, 230)
+CELL_BG = QColor(255, 255, 255)
 TEXT_DARK = QColor(0, 0, 0)
 
 EMPLOYEE_NAME_COLORS = [
@@ -36,6 +36,14 @@ class EmpRow:
 
 
 class CalendarWidget(QWidget):
+    """
+        Interactive calendar table for displaying and editing monthly work schedules.
+        Renders employees, daily shifts, worked-day counts, and metadata in a grid.
+        Supports read-only and override modes, visual highlighting of weekends
+        and holidays, and inline shift overrides via combo boxes with backend
+        synchronization.
+    """
+
     def __init__(self):
         super().__init__()
 
@@ -66,25 +74,32 @@ class CalendarWidget(QWidget):
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
-    # =====================================================
+
     def set_context(self, client, year: int, month: int):
         self.client = client
         self.year = year
         self.month = month
 
+
     def set_read_only(self, read_only: bool):
         self._read_only = read_only
         self._render()
+
 
     def set_override_mode(self, enabled: bool):
         self._override_mode = enabled
         self._render()
 
-    # =====================================================
+
     def load(self, data: dict):
+        """
+            Loads employees, schedule data, and calendar metadata for the selected month.
+            Fetches employees from the API, normalizes and filters the schedule,
+            retrieves month structure (days, weekends, holidays), and renders the table.
+        """
+
         if not self.client:
             return
-
 
         raw = sorted(self.client.get_employees(), key=lambda x: x["full_name"])
 
@@ -98,7 +113,6 @@ class CalendarWidget(QWidget):
         ]
 
         valid_ids = {e.emp_id for e in self._employees}
-
 
         raw_schedule = data.get("schedule", {}) or {}
 
@@ -116,8 +130,14 @@ class CalendarWidget(QWidget):
 
         self._render()
 
-    # =====================================================
+
     def _render(self):
+        """
+            Renders or refreshes the calendar table UI.
+            Builds headers and rows, applies styling and layout rules,
+            and switches between read-only and override editing modes.
+        """
+
         rows = len(self._employees)
         cols = 3 + len(self._days) + 1
 
@@ -152,25 +172,26 @@ class CalendarWidget(QWidget):
 
         header = self.table.horizontalHeader()
 
-        # №
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        # Бр.
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        # Служител → ВАЖНО
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
-        self.table.setColumnWidth(2, 240)  # ⬅️ тук контролираш четимостта
 
-        # Дните → разтягаме
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        self.table.setColumnWidth(2, 240)
+
         for col in range(3, self.table.columnCount() - 1):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.Stretch)
 
-        # Служебен №
         header.setSectionResizeMode(self.table.columnCount() - 1, QHeaderView.ResizeMode.ResizeToContents)
-
         header.setMinimumSectionSize(28)
 
-    # =====================================================
+
     def _paint_day_header(self):
+        """
+            Paints the header row with day-specific background colors.
+            Highlights weekends and holidays differently from workdays
+            to visually distinguish non-working days.
+        """
+
         for col in range(self.table.columnCount()):
             it = QTableWidgetItem("")
             it.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -183,8 +204,15 @@ class CalendarWidget(QWidget):
 
             self.table.setItem(0, col, it)
 
-    # =====================================================
+
     def _combo(self, emp: EmpRow, day: int, current: str) -> QComboBox:
+        """
+            Creates a shift-selection combo box for override mode.
+            Allows changing a single day’s shift for an employee, posts the override
+            to the backend, updates local state and worked-day count, and rolls back
+            on validation errors.
+        """
+
         cb = QComboBox()
         cb.setMinimumWidth(48)
         cb.view().setMinimumWidth(48)
@@ -212,12 +240,10 @@ class CalendarWidget(QWidget):
         """)
 
         cb.addItems(SHIFT_OPTIONS)
-
         cb.blockSignals(True)
         cb.setCurrentText(current)
         cb.blockSignals(False)
-
-        old_value = current  # ✅ ЗАПАЗВАМЕ СТАРАТА СТОЙНОСТ
+        old_value = current
 
         def on_change():
             new = cb.currentText()
@@ -235,7 +261,7 @@ class CalendarWidget(QWidget):
                     },
                 )
 
-                # ✅ запис само ако API каже OK
+
                 self._schedule.setdefault(str(emp.emp_id), {})[day] = new
                 self._cell(
                     self._row(emp.full_name),
@@ -251,13 +277,13 @@ class CalendarWidget(QWidget):
                     str(e),
                 )
                 cb.blockSignals(True)
-                cb.setCurrentText(old_value)  # ✅ връщаме старата
+                cb.setCurrentText(old_value)
                 cb.blockSignals(False)
 
         cb.currentIndexChanged.connect(lambda _: on_change())
         return cb
 
-    # =====================================================
+
     def _row(self, name: str) -> int:
         for i, e in enumerate(self._employees):
             if e.full_name == name:
@@ -269,6 +295,12 @@ class CalendarWidget(QWidget):
         return sum(1 for d in self._days if days.get(d) in COUNT_AS_WORKED)
 
     def _cell(self, r, c, text, bg=None, fg=None, bold=False, center=False):
+        """
+            Creates and inserts a styled, non-editable table cell.
+            Applies text content, alignment, font weight, and background/foreground
+            colors, then places the item into the table at the given position.
+        """
+
         it = QTableWidgetItem(str(text))
         it.setFlags(Qt.ItemFlag.ItemIsEnabled)
 
@@ -294,3 +326,6 @@ class CalendarWidget(QWidget):
         self.table.clear()
         self.table.setRowCount(0)
         self.table.setColumnCount(0)
+
+
+

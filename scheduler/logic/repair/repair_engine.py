@@ -10,12 +10,13 @@ def _day_int(day) -> int:
     return int(day)
 
 
-def find_missing_shifts(
-    schedule: Dict[str, Dict[str, str]],
-    year: int,
-    month: int,
-    holidays: set[int],
-) -> Dict[int, List[str]]:
+def find_missing_shifts(schedule: Dict[str, Dict[str, str]], year, month, holidays: set[int],) -> Dict[int, List[str]]:
+    """
+        Identifies missing required shifts for each day in the month.
+        Checks daily work shifts and admin coverage, accounting for weekends
+        and holidays, and returns a mapping of day to missing shift codes.
+    """
+
     missing = {}
 
     days = sorted(
@@ -31,7 +32,6 @@ def find_missing_shifts(
 
         need = [s for s in SHIFT_WORK if s not in used]
 
-        # Администратор – само в делник
         if calendar.weekday(year, month, day) < 5 and day not in holidays:
             if SHIFT_ADMIN not in {
                 data.get(str(day)) for data in schedule.values()
@@ -44,14 +44,14 @@ def find_missing_shifts(
     return missing
 
 
-def find_replacement(
-    schedule: Dict[str, Dict[str, str]],
-    day: int,
-    shift: str,
-    admins: set[str],
-) -> Optional[str]:
-    d = str(day)
+def find_replacement(schedule: Dict[str, Dict[str, str]], day, shift, admins: set[str],) -> Optional[str]:
+    """
+        Finds a suitable employee to cover a missing shift on a given day.
+        Selects the first available employee with no assigned shift,
+        respects admin-only constraints, and skips blocked assignments.
+    """
 
+    d = str(day)
     for name, days in schedule.items():
         if days.get(d) != "":
             continue
@@ -64,13 +64,13 @@ def find_replacement(
     return None
 
 
-def apply_repair(
-    schedule: Dict[str, Dict[str, str]],
-    year: int,
-    month: int,
-    holidays: set[int],
-    admins: set[str],
-) -> Dict[str, Dict[str, str]]:
+def apply_repair(schedule, year, month, holidays: set[int], admins: set[str],) -> Dict[str, Dict[str, str]]:
+    """
+        Attempts to repair a schedule by filling missing shifts.
+        Creates a copy of the schedule, detects missing daily shifts,
+        and assigns available employees to cover gaps where possible.
+    """
+
     new_schedule = {
         name: days.copy() for name, days in schedule.items()
     }

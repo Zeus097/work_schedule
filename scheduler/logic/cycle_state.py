@@ -12,6 +12,12 @@ def is_first_run() -> bool:
 
 
 def save_last_cycle_state(schedule: dict, last_date):
+    """
+        Persists the last cycle state for each employee.
+        Calculates the next cycle index based on worked shifts
+        and stores it together with the last processed date.
+    """
+
     state = {}
 
     for name, days in schedule.items():

@@ -1,27 +1,14 @@
 from typing import Dict
 
 
-LEAVE_CODES = {"O", "B"}  # отпуск, болничен
+LEAVE_CODES = {"O", "B"}
 
 
-def apply_leave_overrides(
-    schedule: Dict[str, Dict[int, str]],
-    leaves: Dict[str, Dict[int, str]],
-) -> Dict[str, Dict[int, str]]:
+def apply_leave_overrides(schedule: Dict[str, Dict[int, str]], leaves: Dict[str, Dict[int, str]],):
     """
-    leaves пример:
-    {
-      "Емре Адемов Ибрямов": {
-          10: "O",
-          11: "O",
-          12: "B"
-      }
-    }
-
-    ВАЖНО:
-    - замества Д/В/Н с O или B
-    - НЕ пипа циклите
-    - НЕ търси заместници
+        Applies leave and sick-day overrides to an existing schedule.
+        Returns a copied schedule where specified days are replaced
+        with validated leave codes, without mutating the original data.
     """
 
     new_schedule = {}

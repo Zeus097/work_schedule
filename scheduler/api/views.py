@@ -1,18 +1,14 @@
 import calendar
 from datetime import date
-
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
-
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-
 from scheduler.logic.cycle_state import load_last_cycle_state, save_last_cycle_state
 from scheduler.logic.generator.generator import generate_new_month
-from scheduler.logic.months_logic import load_month, save_month, list_month_files
+from scheduler.logic.months_logic import list_month_files
 from scheduler.logic.generator.apply_overrides import apply_overrides
-from scheduler.api.errors import api_error
 from scheduler.api.serializers import (
     GenerateMonthSerializer,
     EmployeeSerializer,
@@ -22,21 +18,37 @@ from scheduler.api.utils.holidays import get_holidays_for_month
 from scheduler.logic.validators.validators import validate_month
 from scheduler.models import AdminEmployee, Employee
 from scheduler.api.utils.validation_errors import humanize_validation_error
-
 from scheduler.logic.months_logic import load_month, save_month
 from scheduler.api.errors import api_error
 
 
 
 def _prev_year_month(year: int, month: int) -> tuple[int, int]:
+    """
+        Returns the previous year and month pair.
+        Handles year rollover when the current month is January.
+    """
+
     return (year - 1, 12) if month == 1 else (year, month - 1)
 
 
 def _normalize_shift(s):
+    """
+        Normalizes a shift value to a clean string.
+        Converts the input to a stripped string or returns an empty
+        string for falsy values.
+    """
+
     return str(s).strip() if s else ""
 
 
 class MonthInfoView(APIView):
+    """
+        API endpoint providing basic calendar information for a month.
+        Returns the number of days, weekend dates, and official holidays
+        for the specified year and month.
+    """
+
     def get(self, request, year, month):
         days = calendar.monthrange(year, month)[1]
         weekends = [d for d in range(1, days + 1) if calendar.weekday(year, month, d) >= 5]
@@ -52,6 +64,13 @@ class MonthInfoView(APIView):
 
 
 class ScheduleView(APIView):
+    """
+        API endpoint for retrieving a normalized monthly schedule.
+        Loads stored schedule data, ensures all employees are present,
+        applies overrides, persists the normalized structure, and
+        returns the final schedule with lock metadata.
+    """
+
     def get(self, request, year, month):
         try:
             data = load_month(year, month)
@@ -86,6 +105,12 @@ class ScheduleView(APIView):
 
 
 class GenerateMonthView(APIView):
+    """
+        API endpoint responsible for generating or regenerating a monthly schedule.
+        Handles first-time bootstrap generation, regeneration of empty or unlocked
+        months, strict vs soft generation modes, and enforces month-to-month
+        locking rules. Ensures schedule consistency before persisting results.
+    """
 
     @staticmethod
     def _is_empty_schedule(schedule: dict) -> bool:
@@ -106,22 +131,19 @@ class GenerateMonthView(APIView):
         year = serializer.validated_data["year"]
         month = serializer.validated_data["month"]
 
-        # 🔧 default strict
+
         strict = serializer.validated_data.get("strict", True)
 
         first_run = not load_last_cycle_state() and not list_month_files()
 
-        # =================================================
-        # 1️⃣ Ако месецът съществува
-        # =================================================
+
         try:
             existing = load_month(year, month)
 
-            # 🧹 АКО графикът е празен → винаги SOFT
+
             if self._is_empty_schedule(existing.get("schedule", {})):
                 strict = False
 
-            # 🔁 Регенериране е позволено само ако НЕ е заключен
             if not existing.get("ui_locked"):
                 generated = generate_new_month(
                     year=year,
@@ -143,9 +165,6 @@ class GenerateMonthView(APIView):
         except FileNotFoundError:
             pass
 
-        # =================================================
-        # 2️⃣ Проверка на предходния месец (НОВ месец)
-        # =================================================
         if not first_run:
             py, pm = _prev_year_month(year, month)
 
@@ -159,7 +178,6 @@ class GenerateMonthView(APIView):
                         http_status=409
                     )
 
-                # 🔑 ключово: ако предходният е заключен → SOFT
                 strict = False
 
             except FileNotFoundError:
@@ -169,9 +187,6 @@ class GenerateMonthView(APIView):
                     http_status=409
                 )
 
-        # =================================================
-        # 3️⃣ Генерация на нов месец
-        # =================================================
         try:
             generated = generate_new_month(
                 year=year,
@@ -198,8 +213,13 @@ class GenerateMonthView(APIView):
         )
 
 
-
 class ScheduleOverrideAPI(APIView):
+    """
+        API endpoint for applying manual schedule overrides.
+        Allows updating a single employee’s shift for a specific day,
+        persists the override, and blocks modifications if the month is locked.
+    """
+
     def post(self, request, year, month):
         emp_id = str(request.data.get("employee_id"))
         day = int(request.data.get("day"))
@@ -214,7 +234,6 @@ class ScheduleOverrideAPI(APIView):
                 http_status=409
             )
 
-        # записваме override БЕЗ валидиране
         data.setdefault("schedule", {}).setdefault(emp_id, {})[day] = shift
         data.setdefault("overrides", {}).setdefault(emp_id, {})[day] = shift
 
@@ -224,6 +243,13 @@ class ScheduleOverrideAPI(APIView):
 
 
 class LockMonthView(APIView):
+    """
+        API endpoint for validating and locking a monthly schedule.
+        Loads the month data, applies overrides, runs full schedule validation,
+        blocks locking on critical errors, and finalizes the month by persisting
+        the locked schedule and saving the last cycle state for future generation.
+    """
+
     def post(self, request, year, month):
         try:
             data = load_month(year, month)
@@ -241,16 +267,13 @@ class LockMonthView(APIView):
                 http_status=409
             )
 
-        # 1️⃣ Финален график = schedule + overrides
         final_schedule = apply_overrides(
             data.get("schedule", {}),
             data.get("overrides", {})
         )
 
-        # 2️⃣ Валидиране
         days = calendar.monthrange(year, month)[1]
         weekdays = {d: calendar.weekday(year, month, d) for d in range(1, days + 1)}
-
         errors = validate_month(
             final_schedule,
             crisis_mode=False,
@@ -279,13 +302,10 @@ class LockMonthView(APIView):
                     status=409
                 )
 
-
-        # 3️⃣ Заключване
         data["schedule"] = final_schedule
         data["ui_locked"] = True
         save_month(year, month, data)
 
-        # 4️⃣ Update cycle_state
         last_day = calendar.monthrange(year, month)[1]
         save_last_cycle_state(
             final_schedule,
@@ -305,17 +325,27 @@ class LockMonthView(APIView):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class SetAdminView(APIView):
+    """
+        API endpoint for assigning the current administrator.
+        Replaces any existing administrator with the specified employee
+        and persists the new admin assignment.
+    """
+
     def post(self, request):
         eid = request.data.get("employee_id")
         employee = Employee.objects.get(id=eid)
-
         AdminEmployee.objects.all().delete()
         AdminEmployee.objects.create(employee=employee)
-
         return Response({"status": "ok"})
 
 
 class EmployeeListCreateView(APIView):
+    """
+        API endpoint for listing and creating employees.
+        Supports retrieving all employees ordered by name and
+        creating new employee records with input validation.
+    """
+
     def get(self, request):
         employees = Employee.objects.all().order_by("full_name")
         return Response(
@@ -340,6 +370,13 @@ class EmployeeListCreateView(APIView):
 
 
 class EmployeeDetailView(APIView):
+    """
+        API endpoint for updating and deleting a single employee.
+        Handles employee modification with validation and supports
+        safe deletion, returning appropriate errors when the employee
+        does not exist.
+    """
+
     def put(self, request, id):
         try:
             employee = Employee.objects.get(id=id)
@@ -379,6 +416,13 @@ class EmployeeDetailView(APIView):
 
 
 class ValidateMonthView(APIView):
+    """
+        API endpoint for validating a monthly schedule without locking it.
+        Loads the stored month data, runs schedule validation against
+        business rules, and returns whether the schedule is valid
+        along with any detected errors.
+    """
+
     def post(self, request, year, month):
         data = load_month(year, month)
         admin = AdminEmployee.objects.first()
@@ -393,6 +437,12 @@ class ValidateMonthView(APIView):
 
 
 class ClearScheduleAPI(APIView):
+    """
+        API endpoint for clearing a monthly schedule.
+        Removes all shifts and overrides for an unlocked month,
+        resets its state, and persists the cleared data.
+    """
+
     def post(self, request, year: int, month: int):
         data = load_month(year, month)
 
@@ -410,17 +460,20 @@ class ClearScheduleAPI(APIView):
                 http_status=409,
             )
 
-        # 🧹 ИЗЧИСТВАНЕ
         data["schedule"] = {}
         data["overrides"] = {}
         data["ui_locked"] = False
-
         save_month(year, month, data)
-
         return Response({"ok": True})
 
 
 class ClearMonthScheduleAPI(APIView):
+    """
+        API endpoint for fully resetting a month's schedule state.
+        Clears all shifts, overrides, and related scheduling metadata
+        for an unlocked month, effectively returning it to a clean state.
+    """
+
     def post(self, request, year: int, month: int):
         data = load_month(year, month)
 
@@ -436,16 +489,19 @@ class ClearMonthScheduleAPI(APIView):
         data["overrides"] = {}
         data["states"] = {}
         data["ideal"] = {}
-
         save_month(year, month, data)
-
         return Response({"status": "ok"})
 
 
 class AcceptMonthAsStartAPI(APIView):
+    """
+        API endpoint for accepting a month as a new scheduling baseline.
+        Applies overrides, validates that the month has a schedule,
+        and saves the cycle state so future months are generated from it.
+    """
+
     def post(self, request, year: int, month: int):
         data = load_month(year, month)
-
         schedule = apply_overrides(
             data.get("schedule", {}),
             data.get("overrides", {})
@@ -461,7 +517,6 @@ class AcceptMonthAsStartAPI(APIView):
 
         last_day = calendar.monthrange(year, month)[1]
         save_last_cycle_state(schedule, date(year, month, last_day))
-
         return Response({"ok": True})
 
 
