@@ -1,46 +1,36 @@
-from datetime import date
 from typing import Dict
-
 from scheduler.logic.rules import to_lat, is_rest_like
-
 
 def extract_cycle_state_from_schedule(
     schedule: Dict[str, Dict[str, str]],
-    last_day: date,
+    last_day,
     admin_id: str,
 ) -> Dict[str, dict]:
-    """
-        Извлича cycle_state от заключен месец.
-        Връща САМО това, което генераторът реално използва.
-    """
 
-    state: Dict[str, dict] = {}
-
-    last_day_num = last_day.day
+    state = {}
 
     for emp_id, days in schedule.items():
-        if emp_id == admin_id:
-            continue
-
         last_shift = None
         last_work_day = None
 
-        for d in range(last_day_num, 0, -1):
-            shift = to_lat(days.get(str(d), ""))
+        for day_str in sorted(days.keys(), key=int):
+            shift = to_lat(days[day_str])
 
-            if is_rest_like(shift):
+            if not shift or is_rest_like(shift):
                 continue
 
             last_shift = shift
-            last_work_day = d
-            break
+            last_work_day = int(day_str)
 
-        if last_shift is None:
-            continue
-
-        state[emp_id] = {
-            "last_shift": last_shift,
-            "last_day": last_work_day,
-        }
+        if last_work_day is None:
+            state[emp_id] = {
+                "last_shift": None,
+                "days_since": 999,
+            }
+        else:
+            state[emp_id] = {
+                "last_shift": last_shift,
+                "days_since": (last_day.day - last_work_day),
+            }
 
     return state

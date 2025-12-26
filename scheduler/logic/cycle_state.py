@@ -10,19 +10,16 @@ def is_first_run() -> bool:
     return not any(DATA_DIR.iterdir())
 
 
-def save_last_cycle_state(final_state: dict, last_date):
-
+def save_last_cycle_state(final_cycle_positions: dict, last_date):
     state = {}
-
-    for emp_id, info in final_state.items():
+    for emp_id, info in final_cycle_positions.items():
         state[str(emp_id)] = {
             "last_shift": info["last_shift"],
-            "last_day": info["last_day"],
+            "days_since": info["days_since"],
             "last_date": last_date.isoformat(),
         }
 
     _save_json_with_lock(LAST_CYCLE_FILE, state)
-
 
 
 def load_last_cycle_state() -> dict:

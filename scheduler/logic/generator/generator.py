@@ -91,7 +91,6 @@ def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
             cycle_pos[str(emp_id)] = (cycle_pos[str(emp_id)] + 1) % CYCLE_LEN
 
     last_day = calendar.monthrange(year, month)[1]
-    save_last_cycle_state(cycle_pos, date(year, month, last_day))
 
     return {
         "year": year,
