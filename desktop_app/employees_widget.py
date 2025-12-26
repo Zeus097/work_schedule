@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLineEdit, QLabel, QMessageBox,
     QRadioButton, QButtonGroup
 )
-from desktop_app.msgbox import question, warning, error, info
+from desktop_app.msgbox import question, warning, error
 
 
 

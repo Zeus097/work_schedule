@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import calendar
-from collections import deque
-from typing import Dict
+from datetime import date
 
 from scheduler.models import Employee
-from scheduler.logic.cycle_state import load_last_cycle_state
+from scheduler.logic.cycle_state import load_last_cycle_state, save_last_cycle_state
 from scheduler.api.utils.holidays import get_holidays_for_month
 from scheduler.logic.months_logic import load_month
 
@@ -18,14 +17,9 @@ CYCLE = [
     "Н", "Н", "Н", "Н",
     "", ""
 ]
-
 CYCLE_LEN = len(CYCLE)
 
-
-def _build_cycle(start_index: int) -> deque:
-    dq = deque(CYCLE)
-    dq.rotate(-start_index)
-    return dq
+REQUIRED_SHIFTS = ("Д", "В", "Н")
 
 
 def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
@@ -40,8 +34,7 @@ def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
 
     employees = {
         str(e["id"]): e["full_name"]
-        for e in Employee.objects.filter(is_active=True)
-        .values("id", "full_name")
+        for e in Employee.objects.filter(is_active=True).values("id", "full_name")
     }
 
     if admin_id not in employees:
@@ -53,13 +46,13 @@ def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
         raise RuntimeError("Нужни са минимум 4 ротационни служители.")
 
     last_state = load_last_cycle_state() or {}
-    if not strict:
-        last_state = {}
 
-    cycles: Dict[str, deque] = {}
+    cycle_pos: dict[str, int] = {}
     for i, emp_id in enumerate(workers):
-        start_index = last_state.get(emp_id, {}).get("cycle_index", i * 4)
-        cycles[emp_id] = _build_cycle(start_index % CYCLE_LEN)
+        start = last_state.get(str(emp_id), {}).get("cycle_index")
+        if start is None:
+            start = i * 4
+        cycle_pos[str(emp_id)] = int(start) % CYCLE_LEN
 
     schedule = {
         emp_id: {str(day): "" for day in range(1, days_in_month + 1)}
@@ -72,27 +65,33 @@ def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
         if weekday < 5 and day not in holidays:
             schedule[admin_id][str(day)] = "А"
 
-        today = {}
+        candidates = {s: [] for s in REQUIRED_SHIFTS}
+
         for emp_id in workers:
-            shift = cycles[emp_id][0]
-            today.setdefault(shift, []).append(emp_id)
+            idx = cycle_pos[str(emp_id)]
+            shift = CYCLE[idx]
+            if shift in candidates:
+                candidates[shift].append(emp_id)
 
-        required = {"Д", "В", "Н"}
-        available = {k for k in today if k in required}
-
-        if available != required:
+        missing = [s for s in REQUIRED_SHIFTS if not candidates[s]]
+        if missing:
             if strict:
-                raise RuntimeError(f"Невъзможно покритие за ден {day}.")
+                raise RuntimeError(
+                    f"Невъзможно покритие за ден {day}. Липсват: {', '.join(missing)}"
+                )
             for emp_id in workers:
-                cycles[emp_id].rotate(-1)
+                cycle_pos[str(emp_id)] = (cycle_pos[str(emp_id)] + 1) % CYCLE_LEN
             continue
 
-        for shift in required:
-            emp_id = today[shift].pop(0)
-            schedule[emp_id][str(day)] = shift
+        for s in REQUIRED_SHIFTS:
+            emp_id = candidates[s][0]
+            schedule[emp_id][str(day)] = s
 
         for emp_id in workers:
-            cycles[emp_id].rotate(-1)
+            cycle_pos[str(emp_id)] = (cycle_pos[str(emp_id)] + 1) % CYCLE_LEN
+
+    last_day = calendar.monthrange(year, month)[1]
+    save_last_cycle_state(cycle_pos, date(year, month, last_day))
 
     return {
         "year": year,
@@ -102,5 +101,3 @@ def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
         "generator_locked": strict,
         "month_admin_id": admin_id,
     }
-
-

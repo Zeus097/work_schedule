@@ -12,7 +12,7 @@ from desktop_app.calendar_widget import CalendarWidget
 from desktop_app.employees_widget import EmployeesWidget
 from desktop_app.ui.admin.admin_window import AdminWindow
 from desktop_app.export.excel_export import export_schedule_to_excel
-from desktop_app.msgbox import question, error, info, warning
+from desktop_app.msgbox import question, error, show_info, warning
 
 MONTH_NAMES = {
     1: "Януари", 2: "Февруари", 3: "Март",
@@ -332,7 +332,7 @@ class MainWindow(QMainWindow):
         """
 
         if self.is_locked:
-            info(self, "Заключен месец", "Администрацията не е достъпна.")
+            show_info(self, "Заключен месец", "Администрацията не е достъпна.")
             return
 
         if not hasattr(self, "admin_window") or self.admin_window is None:
@@ -393,7 +393,7 @@ class MainWindow(QMainWindow):
         if not filename:
             return
 
-        info = self.client.get_month_info(self.current_year, self.current_month)
+        month_info = self.client.get_month_info(self.current_year, self.current_month)
         employees = self.client.get_employees()
 
         export_schedule_to_excel(
@@ -405,11 +405,11 @@ class MainWindow(QMainWindow):
             month=self.current_month,
             year=self.current_year,
             employees=employees,
-            days=list(range(1, int(info["days"]) + 1)),
+            days=list(range(1, int(month_info["days"]) + 1)),
             schedule=self.current_schedule,
         )
 
-        info(self, "Готово", "Excel файлът е създаден.")
+        show_info(self, "Готово", "Excel файлът е създаден.")
 
 
     def generate_month(self):
@@ -455,7 +455,7 @@ class MainWindow(QMainWindow):
             error(self, "Грешка", str(e))
             return
 
-        info(self, "Готово", "Месецът е генериран.")
+        show_info(self, "Готово", "Месецът е генериран.")
         self.load_month()
 
 
@@ -487,7 +487,7 @@ class MainWindow(QMainWindow):
             )
             return
 
-        info(
+        show_info(
             self,
             "Готово",
             "Графикът е изчистен успешно.\n"
@@ -495,6 +495,7 @@ class MainWindow(QMainWindow):
         )
 
         self.load_month()
+
 
     def validate_before_generate(self):
         employees = self.client.get_employees()

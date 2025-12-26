@@ -1,5 +1,6 @@
 import calendar
 from datetime import date
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -19,6 +20,8 @@ from scheduler.models import Employee, MonthAdmin
 from scheduler.api.utils.validation_errors import humanize_validation_error
 from scheduler.logic.months_logic import load_month, save_month
 from scheduler.api.errors import api_error
+from scheduler.logic.cycle_state_extractor import extract_cycle_state_from_schedule
+
 
 
 
@@ -356,21 +359,30 @@ class LockMonthView(APIView):
         final_schedule = apply_overrides(schedule, overrides)
 
         days = calendar.monthrange(year, month)[1]
-        weekdays = {d: calendar.weekday(year, month, d) for d in range(1, days + 1)}
+        weekdays = {
+            d: calendar.weekday(year, month, d)
+            for d in range(1, days + 1)
+        }
+
+        admin_id = data.get("month_admin_id")
 
         errors = validate_month(
             final_schedule,
             crisis_mode=False,
-            weekdays=weekdays
+            weekdays=weekdays,
+            admin_id=str(admin_id),
         )
 
         if errors:
             readable = [
-                humanize_validation_error(emp, day, msg)
-                for emp, day, msg in errors
+                humanize_validation_error(emp, day, msg, error_type)
+                for emp, day, msg, error_type in errors
             ]
 
-            blocking = [e for e in readable if e.get("type") == "blocking"]
+            blocking = [
+                e for e in readable
+                if e.get("type") == "blocking"
+            ]
 
             if blocking:
                 return Response(
@@ -388,12 +400,6 @@ class LockMonthView(APIView):
 
         save_month(year, month, data)
 
-        last_day = calendar.monthrange(year, month)[1]
-        save_last_cycle_state(
-            final_schedule,
-            date(year, month, last_day)
-        )
-
         return Response(
             {
                 "ok": True,
@@ -403,7 +409,6 @@ class LockMonthView(APIView):
             },
             status=200
         )
-
 
 
 class EmployeeListCreateView(APIView):
@@ -568,30 +573,44 @@ class ClearMonthScheduleAPI(APIView):
 
 
 class AcceptMonthAsStartAPI(APIView):
-    """
-        API endpoint for accepting a month as a new scheduling baseline.
-        Applies overrides, validates that the month has a schedule,
-        and saves the cycle state so future months are generated from it.
-    """
-
     def post(self, request, year: int, month: int):
         data = load_month(year, month)
-        schedule = apply_overrides(
+
+        if not data.get("schedule"):
+            return api_error(
+                code="EMPTY_MONTH",
+                message="Месецът няма график.",
+                http_status=400
+            )
+
+        admin_id = data.get("month_admin_id")
+        if not admin_id:
+            return api_error(
+                code="NO_ADMIN",
+                message="Няма избран администратор.",
+                http_status=400
+            )
+
+        final_schedule = apply_overrides(
             data.get("schedule", {}),
             data.get("overrides", {})
         )
 
-        if not schedule:
-            return api_error(
-                code="EMPTY_MONTH",
-                message="Месецът няма график.",
-                hint="Първо генерирай или въведи смени.",
-                http_status=400
-            )
+        last_day_num = calendar.monthrange(year, month)[1]
+        last_day_date = date(year, month, last_day_num)
 
-        last_day = calendar.monthrange(year, month)[1]
-        save_last_cycle_state(schedule, date(year, month, last_day))
+        cycle_state = extract_cycle_state_from_schedule(
+            schedule=final_schedule,
+            last_day=last_day_date,
+            admin_id=str(admin_id),
+        )
+
+        save_last_cycle_state(cycle_state, last_day_date)
+
         return Response({"ok": True})
+
+
+
 
 
 class SetMonthAdminView(APIView):

@@ -24,7 +24,7 @@
 from PyQt6.QtWidgets import QMessageBox
 
 
-def info(parent, title: str, text: str):
+def show_info(parent, title: str, text: str):
     QMessageBox.information(
         parent,
         title,

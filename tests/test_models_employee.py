@@ -1,6 +1,6 @@
 import pytest
 import uuid
-from scheduler.models import Employee, AdminEmployee
+from scheduler.models import Employee
 
 
 def unique_name():
@@ -29,10 +29,4 @@ def test_employee_with_dates():
 
 
 
-@pytest.mark.django_db
-def test_admin_employee_creation():
-    emp = Employee.objects.create(full_name=unique_name())
-    admin = AdminEmployee.objects.create(employee=emp)
 
-    assert admin.employee.full_name == emp.full_name
-    assert admin.is_super_admin is True

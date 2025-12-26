@@ -2,7 +2,7 @@ ERROR_BLOCKING = "blocking"
 ERROR_SOFT = "soft"
 
 
-def humanize_validation_error(employee, day, raw_message):
+def humanize_validation_error(employee, day, raw_message, error_type):
     """
         Converts low-level validation errors into user-friendly messages.
         Maps technical error details to structured, localized messages

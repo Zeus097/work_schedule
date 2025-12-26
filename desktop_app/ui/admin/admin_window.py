@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from desktop_app.api_client import APIClient
-from desktop_app.msgbox import question, warning, error, info
+from desktop_app.msgbox import warning, error
 
 
 

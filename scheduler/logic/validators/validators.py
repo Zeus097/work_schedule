@@ -8,7 +8,18 @@ from scheduler.logic.rules import (
     ShiftCode,
 )
 
-SHIFT_WORK = {"Д", "В", "Н"}
+
+
+ERROR_BLOCKING = "blocking"
+ERROR_SOFT = "soft"
+
+ValidationError = Tuple[str, int, str, str]
+
+DAYLINE_SHIFTS = {"Д", "А"}   # 08:00–16:00
+EVENING_SHIFT = "В"
+NIGHT_SHIFT = "Н"
+
+
 
 
 def validate_admin_shift(weekday: int, shift_lat: ShiftCode) -> bool:
@@ -21,16 +32,15 @@ def validate_month(
     schedule: Dict[str, Dict[int, str]],
     crisis_mode: bool,
     weekdays: Dict[int, int],
-) -> List[Tuple[str, int, str]]:
-    """
-        Validates a monthly schedule against rotation and coverage rules.
-        Checks per-employee shift sequences (including admin constraints),
-        enforces rest and rotation rules, and verifies that each required
-        shift is covered exactly once per day.
-    """
+    admin_id: str,
+) -> List[ValidationError]:
 
-    errors: List[Tuple[str, int, str]] = []
+    admin_id = str(admin_id)
+    errors: List[ValidationError] = []
 
+    # ──────────────
+    # Rotations
+    # ──────────────
     for employee, days in schedule.items():
         prev_shift: ShiftCode | None = None
         last_work_day: int | None = None
@@ -41,10 +51,12 @@ def validate_month(
 
             days_since = 999 if last_work_day is None else day - last_work_day
 
-            if employee.lower().startswith("адм"):
+            if employee == admin_id:
                 if not validate_admin_shift(weekdays[day], shift_lat):
                     errors.append(
-                        (employee, day, "Администраторът не може да работи в този ден")
+                        (employee, day,
+                         "Администраторът не може да работи в този ден",
+                         ERROR_SOFT)
                     )
                 continue
 
@@ -53,7 +65,9 @@ def validate_month(
 
             if not is_shift_allowed(prev_shift, days_since, shift_lat, crisis_mode):
                 errors.append(
-                    (employee, day, f"Невалидна ротация след {prev_shift}")
+                    (employee, day,
+                     f"Невалидна ротация след {prev_shift}",
+                     ERROR_SOFT)
                 )
 
             prev_shift = shift_lat
@@ -61,20 +75,48 @@ def validate_month(
 
     days = next(iter(schedule.values())).keys()
 
-    for day in days:
-        counts = {"Д": 0, "В": 0, "Н": 0}
+    for day_str in days:
+        day = int(day_str)
 
-        for emp_days in schedule.values():
-            shift = emp_days.get(day, "")
-            if shift in counts:
-                counts[shift] += 1
+        coverage = {
+            "DAY": 0,
+            "В": 0,
+            "Н": 0,
+        }
 
-        for shift, cnt in counts.items():
-            if cnt != 1:
-                errors.append(
-                    ("ПОКРИТИЕ", int(day), f"Смяна {shift} е {cnt} пъти (трябва 1)")
-                )
+        for emp_id, emp_days in schedule.items():
+            shift = emp_days.get(str(day), "")
+
+            if shift in DAYLINE_SHIFTS:
+                coverage["DAY"] += 1
+
+            elif shift == EVENING_SHIFT:
+                coverage["В"] += 1
+
+            elif shift == NIGHT_SHIFT:
+                coverage["Н"] += 1
+
+        # ───── Validations ─────
+
+        if coverage["DAY"] == 0:
+            errors.append(
+                ("ПОКРИТИЕ", day,
+                 "Липсва дневна смяна (Д или А)",
+                 ERROR_BLOCKING)
+            )
+
+        if coverage["В"] != 1:
+            errors.append(
+                ("ПОКРИТИЕ", day,
+                 f"Вечерна смяна (В) = {coverage['В']}",
+                 ERROR_BLOCKING)
+            )
+
+        if coverage["Н"] != 1:
+            errors.append(
+                ("ПОКРИТИЕ", day,
+                 f"Нощна смяна (Н) = {coverage['Н']}",
+                 ERROR_BLOCKING)
+            )
 
     return errors
-
-
