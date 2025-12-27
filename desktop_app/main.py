@@ -1,16 +1,22 @@
+from desktop_app.backend_runner import DjangoBackend
 import sys
 from PyQt6.QtWidgets import QApplication
 from desktop_app.main_window import MainWindow
 
 
-
 def main():
-    """ App entry point. """
-
     app = QApplication(sys.argv)
+
+    backend = DjangoBackend()
+    backend.start()
+
     window = MainWindow()
     window.show()
-    sys.exit(app.exec())
+
+    exit_code = app.exec()
+
+    backend.stop()
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
