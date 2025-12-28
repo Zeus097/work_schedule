@@ -1,21 +1,26 @@
 import os
 import re
 import calendar
+from pathlib import Path
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.conf import settings
 
 from scheduler.api.utils.holidays import get_holidays_for_month
 
-DATA_DIR = settings.BASE_DIR / "data"
+
+DATA_DIR = Path(settings.BASE_DIR) / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 FILE_PATTERN = re.compile(r"^(\d{4})-(\d{2})\.json$")
 
 
 class MetaYearsView(APIView):
     """
-        API endpoint for listing available schedule years.
-        Scans stored schedule files, extracts unique years,
-        and returns them in sorted order.
+    API endpoint for listing available schedule years.
+    Scans stored schedule files, extracts unique years,
+    and returns them in sorted order.
     """
 
     def get(self, request):
@@ -26,15 +31,14 @@ class MetaYearsView(APIView):
             if match:
                 years.add(match.group(1))
 
-        years = sorted(list(years))
-        return Response(years)
+        return Response(sorted(years))
 
 
 class MetaMonthsView(APIView):
     """
-        API endpoint for listing available months for a given year.
-        Scans stored schedule files, filters by year,
-        and returns the months in chronological order.
+    API endpoint for listing available months for a given year.
+    Scans stored schedule files, filters by year,
+    and returns the months in chronological order.
     """
 
     def get(self, request, year):
@@ -45,15 +49,14 @@ class MetaMonthsView(APIView):
             if match and match.group(1) == year:
                 months.append(match.group(2))
 
-        months = sorted(months, key=lambda x: int(x))
+        months.sort(key=int)
         return Response({year: months})
 
 
 class MetaMonthInfoView(APIView):
     """
-        API endpoint providing calendar metadata for a given month.
-        Returns total days, weekend dates, and official holidays
-        for the specified year and month.
+    API endpoint providing calendar metadata for a given month.
+    Returns total days, weekend dates, and official holidays.
     """
 
     def get(self, request, year, month):
@@ -76,5 +79,3 @@ class MetaMonthInfoView(APIView):
             "weekends": weekends,
             "holidays": holidays
         })
-
-

@@ -7,7 +7,7 @@ class EmployeeService:
     @staticmethod
     def get_active_employees_for_month(year, month):
         """
-        Returns a list with names, that the generator can use.
+            Returns a list with names, that the generator can use.
         """
 
         month_start = date(year, month, 1)

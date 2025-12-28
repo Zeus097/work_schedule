@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from desktop_app.api_client import APIClient
+from desktop_app.services.app_service import AppService
 from desktop_app.calendar_widget import CalendarWidget
 from desktop_app.employees_widget import EmployeesWidget
 from desktop_app.ui.admin.admin_window import AdminWindow
@@ -36,7 +36,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.client = APIClient()
+        self.client = AppService()
         self.setWindowTitle("Мениджър на работни графици")
 
         self.current_year = None
@@ -51,7 +51,12 @@ class MainWindow(QMainWindow):
         self.calendar_widget = CalendarWidget()
 
         self.build_ui()
+
+        self._backend_ready = False
         self.init_defaults()
+
+        self._backend_ready = True
+        self.safe_load_month()
 
 
     def build_ui(self):
@@ -147,8 +152,8 @@ class MainWindow(QMainWindow):
         container.setLayout(main_layout)
         self.setCentralWidget(container)
 
-        self.year_select.currentIndexChanged.connect(self.load_month)
-        self.month_select.currentIndexChanged.connect(self.load_month)
+        self.year_select.currentIndexChanged.connect(self.safe_load_month)
+        self.month_select.currentIndexChanged.connect(self.safe_load_month)
 
         self.generate_btn = QPushButton("⚙️ Генерирай месец")
         self.generate_btn.clicked.connect(self.generate_month)
@@ -157,12 +162,6 @@ class MainWindow(QMainWindow):
 
 
     def init_defaults(self):
-        """
-            Initializes default year and month selections.
-            Sets the current date as the active context, enables the UI,
-            and triggers initial month loading.
-        """
-
         now = datetime.now()
 
         self.year_select.setCurrentIndex(
@@ -179,8 +178,7 @@ class MainWindow(QMainWindow):
     def load_month(self):
         """
             Loads or initializes the selected month.
-            Attempts to fetch an existing schedule, handles new (non-generated)
-            months, updates lock state and UI controls, and renders the calendar.
+            Safe against backend-not-ready state.
         """
 
         if not self._ui_ready:
@@ -199,6 +197,8 @@ class MainWindow(QMainWindow):
             data = self.client.get_schedule(year, month)
 
         except FileNotFoundError:
+            self._backend_ready = True
+
             self.current_year = year
             self.current_month = month
             self.current_schedule = {}
@@ -211,10 +211,20 @@ class MainWindow(QMainWindow):
             self.lock_status_label.setStyleSheet("color: orange; font-weight: bold;")
 
             self.override_btn.setEnabled(False)
-            self.admin_btn.setEnabled(False)
-            self.validate_before_generate()
 
+            self.employees_btn.setEnabled(True)
+            self.admin_btn.setEnabled(True)
+
+            self._update_lock_ui()
+
+            self.validate_before_generate()
             return
+
+
+        except Exception:
+            return
+
+        self._backend_ready = True
 
         self.current_year = year
         self.current_month = month
@@ -230,29 +240,26 @@ class MainWindow(QMainWindow):
             elif reason == "NO_ADMIN":
                 msg = "❗ Няма избран администратор за текущия месец."
             else:
-                msg = "❗ Месецът е временно замразен."
+                msg = "ℹ️ Месецът вече е генериран."
 
             self.lock_status_label.setText(msg)
             self.lock_status_label.setStyleSheet(
                 "color: red; font-weight: bold;"
             )
 
-            # ! shows only needed actions
             self.generate_btn.setEnabled(False)
-            self.override_btn.setEnabled(False)
-            self.clear_btn.setEnabled(False)
 
-            # !!: employees always enabled
-            self.employees_btn.setEnabled(True)
-            self.admin_btn.setEnabled(True)
+            self.override_btn.setEnabled(not self.is_locked)
+            self.clear_btn.setEnabled(not self.is_locked)
+            self.employees_btn.setEnabled(not self.is_locked)
+            self.admin_btn.setEnabled(not self.is_locked)
 
-            # shows the calendar empty but valid
             self.calendar_widget.set_context(self.client, year, month)
-            self.calendar_widget.set_read_only(True)
+            self.calendar_widget.set_read_only(self.is_locked)
             self.calendar_widget.load(data)
 
             self.month_title.setText(f"{MONTH_NAMES[month]} {year} г.")
-            return
+
 
         self.override_enabled = False
         self.override_btn.setChecked(False)
@@ -294,13 +301,14 @@ class MainWindow(QMainWindow):
         self.override_enabled = self.override_btn.isChecked()
         self.calendar_widget.set_override_mode(self.override_enabled)
 
-        data = self.client.get_schedule(self.current_year, self.current_month)
-        self.calendar_widget.load(data)
-        self.calendar_widget.set_read_only(False)
-
-        self.override_btn.setText(
-            "✅ Приключи редакция" if self.override_enabled else "✏️ Ръчни корекции"
-        )
+        if self.override_enabled:
+            data = self.client.get_schedule(self.current_year, self.current_month)
+            self.calendar_widget.load(data)
+            self.calendar_widget.set_read_only(False)
+            self.override_btn.setText("✅ Приключи редакция")
+        else:
+            self.load_month()
+            self.override_btn.setText("✏️ Ръчни корекции")
 
 
     def _update_lock_ui(self):
@@ -524,5 +532,18 @@ class MainWindow(QMainWindow):
         self.generate_btn.setEnabled(True)
         return True
 
+
+    def safe_load_month(self):
+        if not self._backend_ready:
+            return
+
+        try:
+            self.load_month()
+        except Exception:
+            pass
+
+
+    def closeEvent(self, event):
+        event.accept()
 
 

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import calendar
 from datetime import date
+from typing import Dict
 
-from scheduler.models import Employee
-from scheduler.logic.cycle_state import load_last_cycle_state, save_last_cycle_state
+from scheduler.logic.cycle_state import load_last_cycle_state
 from scheduler.api.utils.holidays import get_holidays_for_month
 from scheduler.logic.months_logic import load_month
 
@@ -22,7 +22,12 @@ CYCLE_LEN = len(CYCLE)
 REQUIRED_SHIFTS = ("Д", "В", "Н")
 
 
-def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
+def generate_new_month(
+    year: int,
+    month: int,
+    employees: Dict[str, str],
+    strict: bool = True,
+) -> dict:
     _, days_in_month = calendar.monthrange(year, month)
     holidays = set(get_holidays_for_month(year, month))
 
@@ -31,11 +36,6 @@ def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
 
     if not admin_id:
         raise RuntimeError("Няма зададен администратор за месеца.")
-
-    employees = {
-        str(e["id"]): e["full_name"]
-        for e in Employee.objects.filter(is_active=True).values("id", "full_name")
-    }
 
     if admin_id not in employees:
         raise RuntimeError("Администраторът не е активен служител.")
@@ -47,7 +47,7 @@ def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
 
     last_state = load_last_cycle_state() or {}
 
-    cycle_pos: dict[str, int] = {}
+    cycle_pos: Dict[str, int] = {}
     for i, emp_id in enumerate(workers):
         start = last_state.get(str(emp_id), {}).get("cycle_index")
         if start is None:
@@ -89,8 +89,6 @@ def generate_new_month(year: int, month: int, strict: bool = True) -> dict:
 
         for emp_id in workers:
             cycle_pos[str(emp_id)] = (cycle_pos[str(emp_id)] + 1) % CYCLE_LEN
-
-    last_day = calendar.monthrange(year, month)[1]
 
     return {
         "year": year,

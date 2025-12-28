@@ -1,3 +1,9 @@
+from datetime import date
+import calendar
+from scheduler.logic.cycle_state_extractor import extract_cycle_state_from_schedule
+from scheduler.logic.cycle_state import save_last_cycle_state
+
+
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -9,8 +15,6 @@ from PyQt6.QtWidgets import (
     QButtonGroup, QMessageBox
 )
 from PyQt6.QtCore import Qt
-
-from desktop_app.api_client import APIClient
 from desktop_app.msgbox import warning, error
 
 
@@ -65,7 +69,7 @@ class AdminWindow(QWidget):
 
         super().__init__()
 
-        self.client = APIClient()
+        self.client = main_window.client
         self.main_window = main_window
 
         self.setWindowTitle("Администраторски панел")
@@ -309,12 +313,6 @@ class AdminWindow(QWidget):
 
 
     def accept_as_start(self):
-        """
-            Marks the current month as the new generation baseline.
-            Confirms user intent and updates backend state so future schedules
-            are generated starting from this month.
-        """
-
         reply = QMessageBox.question(
             self,
             "Потвърждение",
@@ -330,7 +328,19 @@ class AdminWindow(QWidget):
         month = int(self.main_window.current_month)
 
         try:
-            self.client.accept_month_as_start(year, month)
+            data = self.client.get_schedule(year, month)
+            schedule = data["schedule"]
+
+            last_day = date(year, month, calendar.monthrange(year, month)[1])
+
+            state = extract_cycle_state_from_schedule(
+                schedule=schedule,
+                last_day=last_day,
+                admin_id=data.get("month_admin_id"),
+            )
+
+            save_last_cycle_state(state, last_day)
+
         except Exception as e:
             QMessageBox.critical(
                 self,

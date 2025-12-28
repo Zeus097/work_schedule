@@ -2,14 +2,13 @@ import sys
 from pathlib import Path
 
 
-def app_root() -> Path:
+def project_root() -> Path:
     if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS)
+        # .app/Contents/MacOS/app
+        exe_path = Path(sys.executable).resolve()
+        return exe_path.parent
     return Path(__file__).resolve().parents[2]
 
-
-def project_root() -> Path:
-    return app_root()
 
 
 def storage_dir() -> Path:

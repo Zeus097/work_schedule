@@ -1,6 +1,8 @@
-from desktop_app.backend_runner import DjangoBackend
 import sys
+import multiprocessing
 from PyQt6.QtWidgets import QApplication
+
+from desktop_app.backend_runner import DjangoBackend
 from desktop_app.main_window import MainWindow
 
 
@@ -20,4 +22,5 @@ def main():
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()

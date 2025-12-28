@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "full_name": "Служител Админ",
+    "card_number": "323423424234",
+    "is_active": true
+  },
+  {
+    "id": 2,
+    "full_name": "Служител 2",
+    "card_number": "323423424234",
+    "is_active": true
+  },
+  {
+    "id": 3,
+    "full_name": "Служител 1",
+    "card_number": "",
+    "is_active": true
+  },
+  {
+    "id": 4,
+    "full_name": "Служител 3",
+    "card_number": "323423424234",
+    "is_active": true
+  }
+]
