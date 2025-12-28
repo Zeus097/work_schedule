@@ -13,6 +13,10 @@ from desktop_app.employees_widget import EmployeesWidget
 from desktop_app.ui.admin.admin_window import AdminWindow
 from desktop_app.export.excel_export import export_schedule_to_excel
 from desktop_app.msgbox import question, error, show_info, warning
+from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtCore import QUrl
+from pathlib import Path
+
 
 MONTH_NAMES = {
     1: "Януари", 2: "Февруари", 3: "Март",
@@ -118,6 +122,12 @@ class MainWindow(QMainWindow):
         tools.addLayout(left_tools)
 
         tools.addStretch()
+
+        help_btn = QPushButton("❓ Помощ")
+        help_btn.setToolTip("Отвори ръководството за работа")
+        help_btn.clicked.connect(self.open_user_guide)
+        tools.addWidget(help_btn)
+
         main_layout.addLayout(tools)
 
         export_layout = QHBoxLayout()
@@ -545,5 +555,26 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         event.accept()
+
+
+    def open_user_guide(self):
+        guide_path = (
+                Path(__file__).resolve()
+                .parent.parent
+                / "docs"
+                / "User_Guide_Kantar.docx"
+        )
+
+        if not guide_path.exists():
+            warning(
+                self,
+                "Липсва ръководство",
+                "Файлът с потребителското ръководство не е намерен."
+            )
+            return
+
+        QDesktopServices.openUrl(
+            QUrl.fromLocalFile(str(guide_path))
+        )
 
 
