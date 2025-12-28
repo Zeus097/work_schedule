@@ -31,3 +31,10 @@ local_settings.py
 .pytest_cache/
 .coverage
 htmlcov/
+
+# PyInstaller
+/dist/
+/build/
+*.pkg
+*.exe
+*.app
