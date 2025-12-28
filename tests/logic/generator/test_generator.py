@@ -1,110 +1,153 @@
-import django
-from django.conf import settings
-
-
-if not settings.configured:
-    settings.configure(
-        BASE_DIR="",
-        INSTALLED_APPS=[],
-    )
-    django.setup()
-
-
 import pytest
-from unittest.mock import patch, MagicMock
+import calendar
 
 from scheduler.logic.generator.generator import generate_new_month
-from scheduler.logic.generator.overrides import ManualOverride, OverrideKind
 
 
 
 
-def make_config():
+@pytest.fixture
+def employees_ok():
     return {
-        "employees": [
-            {"name": "Служител 1"},
-            {"name": "Служител 2"},
-            {"name": "Служител 3"},
-        ],
-        "admin": {"name": "Администратор"},
+        "1": "Admin",
+        "2": "Emp 1",
+        "3": "Emp 2",
+        "4": "Emp 3",
+        "5": "Emp 4",
     }
 
 
-def make_states():
-    mock_state = MagicMock()
-    mock_state.days_since = 0
-    return {
-        "Служител 1": mock_state,
-        "Служител 2": mock_state,
-        "Служител 3": mock_state,
-        "Администратор": mock_state,
+@pytest.fixture
+def month_data_with_admin(monkeypatch):
+    def fake_load_month(year, month):
+        return {
+            "month_admin_id": "1"
+        }
+
+    monkeypatch.setattr(
+        "scheduler.logic.generator.generator.load_month",
+        fake_load_month
+    )
+
+
+@pytest.fixture
+def no_last_cycle(monkeypatch):
+    monkeypatch.setattr(
+        "scheduler.logic.generator.generator.load_last_cycle_state",
+        lambda: {}
+    )
+
+
+@pytest.fixture
+def no_holidays(monkeypatch):
+    monkeypatch.setattr(
+        "scheduler.logic.generator.generator.get_holidays_for_month",
+        lambda y, m: []
+    )
+
+
+def test_no_admin_raises(employees_ok, monkeypatch):
+    monkeypatch.setattr(
+        "scheduler.logic.generator.generator.load_month",
+        lambda y, m: {}
+    )
+
+    with pytest.raises(RuntimeError, match="Няма зададен администратор"):
+        generate_new_month(2025, 1, employees_ok)
+
+
+def test_admin_not_active_raises(employees_ok, month_data_with_admin, monkeypatch):
+    employees_ok.pop("1")  # администраторът липсва
+
+    with pytest.raises(RuntimeError, match="Администраторът не е активен"):
+        generate_new_month(2025, 1, employees_ok)
+
+
+def test_less_than_4_workers_raises(month_data_with_admin, monkeypatch):
+    employees = {
+        "1": "Admin",
+        "2": "Emp 1",
+        "3": "Emp 2",
+        "4": "Emp 3",
     }
 
+    with pytest.raises(RuntimeError, match="минимум 4"):
+        generate_new_month(2025, 1, employees)
 
 
-@patch("scheduler.logic.generator.generator.apply_shift")
-@patch("scheduler.logic.generator.generator.choose_employee_for_shift")
-@patch("scheduler.logic.generator.generator.prepare_employee_states")
-@patch("scheduler.logic.generator.generator.count_working_days")
-@patch("scheduler.logic.generator.generator.get_latest_month")
-@patch("scheduler.logic.generator.generator.load_config")
-def test_generator_respects_overrides(
-    mock_load_config,
-    mock_get_last,
-    mock_count_workdays,
-    mock_prepare_states,
-    mock_choose,
-    mock_apply_shift,
+def test_successful_generation_structure(
+    employees_ok,
+    month_data_with_admin,
+    no_last_cycle,
+    no_holidays
 ):
+    result = generate_new_month(2025, 1, employees_ok)
 
-    mock_load_config.return_value = make_config()
-    mock_get_last.return_value = None
-    mock_count_workdays.return_value = 22
-    mock_prepare_states.return_value = make_states()
+    assert result["year"] == 2025
+    assert result["month"] == 1
+    assert result["generator_locked"] is True
+    assert result["month_admin_id"] == "1"
 
-
-    def choose_side_effect(*args, **kwargs):
-
-        used = kwargs.get("used_today", set())
-
-
-        for candidate in ["Служител 2", "Служител 3", "Служител 1"]:
-            if candidate not in used:
-                return candidate
-
-    mock_choose.side_effect = choose_side_effect
-
-    overrides = [
-        ManualOverride("Служител 1", 5, "D", OverrideKind.SET_SHIFT, True),
-        ManualOverride("Служител 2", 10, "P", OverrideKind.VACATION, True),
-        ManualOverride("Служител 3", 3, "V", OverrideKind.SET_SHIFT, True),
-    ]
+    schedule = result["schedule"]
+    assert set(schedule.keys()) == set(employees_ok.keys())
 
 
-    result = generate_new_month(2026, 1, overrides=overrides)
+def test_each_day_has_required_shifts(
+    employees_ok,
+    month_data_with_admin,
+    no_last_cycle,
+    no_holidays
+):
+    year, month = 2025, 1
+    result = generate_new_month(year, month, employees_ok)
     schedule = result["schedule"]
 
+    _, days_in_month = calendar.monthrange(year, month)
+
+    for day in range(1, days_in_month + 1):
+        shifts = []
+        for emp, days in schedule.items():
+            s = days[str(day)]
+            if s in ("Д", "В", "Н"):
+                shifts.append(s)
+
+        assert sorted(shifts) == ["В", "Д", "Н"], f"Day {day} broken"
 
 
+def test_admin_shift_only_weekdays(
+    employees_ok,
+    month_data_with_admin,
+    no_last_cycle,
+    no_holidays
+):
+    year, month = 2025, 1
+    result = generate_new_month(year, month, employees_ok)
+    admin_days = result["schedule"]["1"]
 
-    assert schedule["Служител 1"][5] == "Д"
+    for day, shift in admin_days.items():
+        weekday = calendar.weekday(year, month, int(day))
+        if weekday < 5:
+            assert shift == "А"
+        else:
+            assert shift == ""
 
 
-    assert schedule["Служител 2"][10] == "П"
+def test_strict_false_does_not_crash_on_missing(monkeypatch, employees_ok):
+    monkeypatch.setattr(
+        "scheduler.logic.generator.generator.load_month",
+        lambda y, m: {"month_admin_id": "1"}
+    )
 
+    monkeypatch.setattr(
+        "scheduler.logic.generator.generator.get_holidays_for_month",
+        lambda y, m: []
+    )
 
-    assert schedule["Служител 3"][3] == "В"
+    monkeypatch.setattr(
+        "scheduler.logic.generator.generator.load_last_cycle_state",
+        lambda: {}
+    )
 
-
-    assert schedule["Администратор"][1] == "А"
-
-
-    assert schedule["Администратор"][4] == ""
-
-
-    assert "schedule" in result
-    assert "ideal" in result
-    assert "states" in result
-
+    generate_new_month(2025, 1, employees_ok, strict=False)
 
 

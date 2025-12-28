@@ -36,8 +36,6 @@ def test_manual_override_is_frozen():
         o.employee = "Петър"
 
 
-
-
 def test_index_overrides_groups_by_day_and_employee():
     overrides = [
         ManualOverride("Иван", 5, "D", OverrideKind.SET_SHIFT),
@@ -53,8 +51,6 @@ def test_index_overrides_groups_by_day_and_employee():
     assert indexed[5]["Иван"].shift_code == "D"
     assert indexed[5]["Мария"].shift_code == "V"
     assert indexed[10]["Петър"].shift_code == "P"
-
-
 
 
 def test_get_override_returns_item_if_exists():
@@ -80,13 +76,8 @@ def test_get_override_returns_none_if_not_exists():
     assert get_override(lookup, 10, "Иван") is None
 
 
-
-
-
-
 def test_working_codes_definition():
     assert WORKING_CODES == {"D", "V", "N"}
-
 
 
 def test_non_working_codes_definition():
