@@ -457,13 +457,29 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            result = self.client.generate_month(
-                self.current_year,
-                self.current_month
-            )
+            result = self.client.generate_month(self.current_year, self.current_month)
         except Exception as e:
             error(self, "Грешка", str(e))
             return
+
+        warnings_list = result.get("warnings", [])
+        if warnings_list:
+            lines = []
+            for w in warnings_list:
+                day = w["day"]
+                missing = ", ".join(w["missing"])
+                lines.append(f"• Ден {day} – липсват: {missing}")
+
+            warning(
+                self,
+                "⚠️ Генериран с предупреждения",
+                "Следните дни нямат пълно покритие и са оставени празни:\n\n"
+                + "\n".join(lines)
+                + "\n\nМожеш да ги попълниш с ръчни корекции."
+            )
+
+        show_info(self, "Готово", "Месецът е генериран.")
+        self.load_month()
 
         if isinstance(result, dict) and result.get("frozen"):
             reason = result.get("reason")

@@ -4,7 +4,7 @@ import calendar
 from datetime import date
 from typing import Dict
 
-from scheduler.logic.cycle_state import load_last_cycle_state
+from scheduler.logic.cycle_state import load_last_cycle_state, save_last_cycle_state
 from scheduler.api.utils.holidays import get_holidays_for_month
 from scheduler.logic.months_logic import load_month
 
@@ -70,29 +70,43 @@ def generate_new_month(
         candidates = {s: [] for s in REQUIRED_SHIFTS}
 
         for emp_id in workers:
-            idx = cycle_pos[str(emp_id)]
-            shift = CYCLE[idx]
+            shift = CYCLE[cycle_pos[str(emp_id)]]
             if shift in candidates:
                 candidates[shift].append(emp_id)
 
         missing = [s for s in REQUIRED_SHIFTS if not candidates[s]]
+
         if missing:
             warnings.append({
                 "day": day,
                 "missing": missing,
             })
 
+            # advance cycle even on missing coverage
             for emp_id in workers:
                 cycle_pos[str(emp_id)] = (cycle_pos[str(emp_id)] + 1) % CYCLE_LEN
             continue
 
+        # assign shifts
         for s in REQUIRED_SHIFTS:
             allowed = 2 if s == "Д" else 1
             for emp_id in candidates[s][:allowed]:
                 schedule[emp_id][str(day)] = s
 
+        # advance cycle after successful day
         for emp_id in workers:
             cycle_pos[str(emp_id)] = (cycle_pos[str(emp_id)] + 1) % CYCLE_LEN
+
+    # SAVE FINAL CYCLE STATE
+    final_state = {
+        str(emp_id): {"cycle_index": cycle_pos[str(emp_id)]}
+        for emp_id in workers
+    }
+
+    save_last_cycle_state(
+        final_state,
+        date(year, month, days_in_month)
+    )
 
     return {
         "year": year,

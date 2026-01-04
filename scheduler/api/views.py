@@ -195,11 +195,18 @@ class GenerateMonthView(APIView):
                 strict = False
 
             if not existing.get("ui_locked"):
+                employees = {
+                    str(e.id): e.name
+                    for e in Employee.objects.filter(is_active=True)
+                }
+
                 generated = generate_new_month(
                     year=year,
                     month=month,
+                    employees=employees,
                     strict=strict,
                 )
+
                 generated["ui_locked"] = False
                 save_month(year, month, generated)
 
@@ -235,11 +242,25 @@ class GenerateMonthView(APIView):
                     http_status=409
                 )
 
-        generated = generate_new_month(
-            year=year,
-            month=month,
-            strict=strict,
-        )
+        employees = {
+            str(e.id): e.name
+            for e in Employee.objects.filter(is_active=True)
+        }
+
+        try:
+            generated = generate_new_month(
+                year=year,
+                month=month,
+                employees=employees,
+                strict=strict,
+            )
+        except Exception:
+            return api_error(
+                "GENERATOR_ERROR",
+                "Възникна вътрешна грешка при генериране на графика.\n"
+                "Моля, опитайте отново или се свържете с администратора.",
+                http_status=409
+            )
 
         generated["ui_locked"] = False
         save_month(year, month, generated)
