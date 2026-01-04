@@ -59,6 +59,8 @@ def generate_new_month(
         for emp_id in workers + [admin_id]
     }
 
+    warnings = []
+
     for day in range(1, days_in_month + 1):
         weekday = calendar.weekday(year, month, day)
 
@@ -75,17 +77,19 @@ def generate_new_month(
 
         missing = [s for s in REQUIRED_SHIFTS if not candidates[s]]
         if missing:
-            if strict:
-                raise RuntimeError(
-                    f"Невъзможно покритие за ден {day}. Липсват: {', '.join(missing)}"
-                )
+            warnings.append({
+                "day": day,
+                "missing": missing,
+            })
+
             for emp_id in workers:
                 cycle_pos[str(emp_id)] = (cycle_pos[str(emp_id)] + 1) % CYCLE_LEN
             continue
 
         for s in REQUIRED_SHIFTS:
-            emp_id = candidates[s][0]
-            schedule[emp_id][str(day)] = s
+            allowed = 2 if s == "Д" else 1
+            for emp_id in candidates[s][:allowed]:
+                schedule[emp_id][str(day)] = s
 
         for emp_id in workers:
             cycle_pos[str(emp_id)] = (cycle_pos[str(emp_id)] + 1) % CYCLE_LEN
@@ -95,6 +99,7 @@ def generate_new_month(
         "month": month,
         "schedule": schedule,
         "overrides": {},
-        "generator_locked": strict,
+        "warnings": warnings,
+        "generator_locked": False,
         "month_admin_id": admin_id,
     }

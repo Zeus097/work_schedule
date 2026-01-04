@@ -137,28 +137,6 @@ class ScheduleView(APIView):
 
 
 class GenerateMonthView(APIView):
-    """
-        API endpoint for generating a monthly work schedule.
-
-        Responsibilities:
-            - Generates a new month or regenerates an existing, unlocked month.
-            - Enforces prerequisite business rules before generation:
-                • Minimum required number of active employees.
-                • Presence of an assigned administrator.
-            - When prerequisites are not met, creates a valid but *frozen* month
-                (generator_locked=True) instead of returning an error, allowing the UI
-                to load the month and guide the user to resolve the issue.
-            - Supports strict and soft generation modes depending on context
-                (first run, empty month, previous month state).
-            - Preserves month-to-month continuity by validating and requiring
-                the previous month to be locked when applicable.
-            - Persists all generated or frozen month data to JSON storage.
-
-        This endpoint guarantees that a generation request always results
-            in a consistent month state, avoiding hard failures and improving
-            system robustness against incomplete UI or invalid client flows.
-    """
-
     def _freeze_month(self, year: int, month: int, reason: str):
         data = {
             "year": year,
@@ -171,12 +149,14 @@ class GenerateMonthView(APIView):
         }
         save_month(year, month, data)
 
+
     @staticmethod
     def _is_empty_schedule(schedule: dict) -> bool:
         return all(
             all(v == "" for v in days.values())
             for days in schedule.values()
         )
+
 
     def post(self, request):
         serializer = GenerateMonthSerializer(data=request.data)
@@ -189,6 +169,7 @@ class GenerateMonthView(APIView):
 
         year = serializer.validated_data["year"]
         month = serializer.validated_data["month"]
+        strict = serializer.validated_data.get("strict", True)
 
         employees_count = Employee.objects.filter(is_active=True).count()
         try:
@@ -199,34 +180,16 @@ class GenerateMonthView(APIView):
 
         if employees_count < 4:
             self._freeze_month(year, month, "MIN_EMPLOYEES")
-            return Response(
-                {
-                    "generated": False,
-                    "frozen": True,
-                    "reason": "MIN_EMPLOYEES",
-                },
-                status=200
-            )
+            return Response({"generated": False, "frozen": True}, status=200)
 
         if not admin_exists:
             self._freeze_month(year, month, "NO_ADMIN")
-            return Response(
-                {
-                    "generated": False,
-                    "frozen": True,
-                    "reason": "NO_ADMIN",
-                },
-                status=200
-            )
-
-        strict = serializer.validated_data.get("strict", True)
+            return Response({"generated": False, "frozen": True}, status=200)
 
         first_run = not load_last_cycle_state() and not list_month_files()
 
-
         try:
             existing = load_month(year, month)
-
 
             if self._is_empty_schedule(existing.get("schedule", {})):
                 strict = False
@@ -243,6 +206,7 @@ class GenerateMonthView(APIView):
                 return Response(
                     {
                         "generated": True,
+                        "warnings": generated.get("warnings", []),
                         "regenerated": True,
                         "strict": strict,
                     },
@@ -257,16 +221,13 @@ class GenerateMonthView(APIView):
 
             try:
                 prev = load_month(py, pm)
-
                 if not prev.get("ui_locked"):
                     return api_error(
                         "PREV_NOT_LOCKED",
                         "Предходният месец не е заключен.",
                         http_status=409
                     )
-
                 strict = False
-
             except FileNotFoundError:
                 return api_error(
                     "PREV_MISSING",
@@ -274,18 +235,11 @@ class GenerateMonthView(APIView):
                     http_status=409
                 )
 
-        try:
-            generated = generate_new_month(
-                year=year,
-                month=month,
-                strict=strict,
-            )
-        except RuntimeError as e:
-            return api_error(
-                "GENERATION_FAILED",
-                str(e),
-                http_status=409
-            )
+        generated = generate_new_month(
+            year=year,
+            month=month,
+            strict=strict,
+        )
 
         generated["ui_locked"] = False
         save_month(year, month, generated)
@@ -293,6 +247,7 @@ class GenerateMonthView(APIView):
         return Response(
             {
                 "generated": True,
+                "warnings": generated.get("warnings", []),
                 "bootstrap": first_run,
                 "strict": strict,
             },

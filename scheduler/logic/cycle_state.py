@@ -1,13 +1,8 @@
 import json
-
 from scheduler.logic.file_paths import DATA_DIR
 from scheduler.logic.json_help_functions import _save_json_with_lock
 
 LAST_CYCLE_FILE = DATA_DIR / "last_cycle_state.json"
-
-
-def is_first_run() -> bool:
-    return not any(DATA_DIR.iterdir())
 
 
 def save_last_cycle_state(final_cycle_positions: dict, last_date):
@@ -16,7 +11,7 @@ def save_last_cycle_state(final_cycle_positions: dict, last_date):
     for emp_id, info in final_cycle_positions.items():
         if "cycle_index" in info:
             state[str(emp_id)] = {
-                "cycle_index": info["cycle_index"],
+                "cycle_index": int(info["cycle_index"]),
                 "last_date": last_date.isoformat(),
             }
         else:
@@ -27,8 +22,6 @@ def save_last_cycle_state(final_cycle_positions: dict, last_date):
             }
 
     _save_json_with_lock(LAST_CYCLE_FILE, state)
-
-
 
 
 def load_last_cycle_state() -> dict:

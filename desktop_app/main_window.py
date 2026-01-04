@@ -220,16 +220,15 @@ class MainWindow(QMainWindow):
             self.lock_status_label.setText("🆕 Нов месец (не е генериран)")
             self.lock_status_label.setStyleSheet("color: orange; font-weight: bold;")
 
+            self.generate_btn.setEnabled(True)
             self.override_btn.setEnabled(False)
 
             self.employees_btn.setEnabled(True)
             self.admin_btn.setEnabled(True)
 
             self._update_lock_ui()
-
             self.validate_before_generate()
             return
-
 
         except Exception:
             return
@@ -240,9 +239,10 @@ class MainWindow(QMainWindow):
         self.current_month = month
         self.current_schedule = data["schedule"]
         self.is_locked = bool(data.get("ui_locked", False))
+        generator_locked = bool(data.get("generator_locked", False))
 
-        # 🔒 Generator freeze
-        if data.get("generator_locked"):
+        # 🔒 Generator freeze (HARD)
+        if generator_locked:
             reason = data.get("freeze_reason")
 
             if reason == "MIN_EMPLOYEES":
@@ -253,23 +253,7 @@ class MainWindow(QMainWindow):
                 msg = "ℹ️ Месецът вече е генериран."
 
             self.lock_status_label.setText(msg)
-            self.lock_status_label.setStyleSheet(
-                "color: red; font-weight: bold;"
-            )
-
-            self.generate_btn.setEnabled(False)
-
-            self.override_btn.setEnabled(not self.is_locked)
-            self.clear_btn.setEnabled(not self.is_locked)
-            self.employees_btn.setEnabled(not self.is_locked)
-            self.admin_btn.setEnabled(not self.is_locked)
-
-            self.calendar_widget.set_context(self.client, year, month)
-            self.calendar_widget.set_read_only(self.is_locked)
-            self.calendar_widget.load(data)
-
-            self.month_title.setText(f"{MONTH_NAMES[month]} {year} г.")
-
+            self.lock_status_label.setStyleSheet("color: red; font-weight: bold;")
 
         self.override_enabled = False
         self.override_btn.setChecked(False)
@@ -283,11 +267,10 @@ class MainWindow(QMainWindow):
         self._update_lock_ui()
         self.month_title.setText(f"{MONTH_NAMES[month]} {year} г.")
 
-        has_any_shift = any(
-            (str(shift).strip() for emp_days in self.current_schedule.values() for shift in emp_days.values())
-        ) if self.current_schedule else False
+        self.generate_btn.setEnabled(
+            not self.is_locked and not generator_locked
+        )
 
-        self.generate_btn.setEnabled(not self.is_locked and not has_any_shift)
         self.validate_before_generate()
 
 
@@ -331,6 +314,7 @@ class MainWindow(QMainWindow):
         if self.is_locked:
             self.lock_status_label.setText("🔒 Месецът е ЗАКЛЮЧЕН")
             self.lock_status_label.setStyleSheet("color: red; font-weight: bold;")
+            self.generate_btn.setEnabled(False)
         else:
             self.lock_status_label.setText("🔓 Месецът е ОТВОРЕН")
             self.lock_status_label.setStyleSheet("color: green; font-weight: bold;")
@@ -338,7 +322,6 @@ class MainWindow(QMainWindow):
         self.employees_btn.setEnabled(not self.is_locked)
         self.admin_btn.setEnabled(not self.is_locked)
         self.override_btn.setEnabled(not self.is_locked)
-
         self.clear_btn.setEnabled(not self.is_locked and bool(self.current_schedule))
 
 
@@ -436,6 +419,14 @@ class MainWindow(QMainWindow):
             after validating required preconditions in the UI.
         """
 
+        if self.is_locked:
+            warning(
+                self,
+                "Заключен месец",
+                "Месецът е заключен и не може да се генерира отново."
+            )
+            return
+
         if not self.validate_before_generate():
             return
 
@@ -448,7 +439,6 @@ class MainWindow(QMainWindow):
                 "• 4 ротационни служители\n"
                 "• 1 администратор"
             )
-
             return
 
         try:
@@ -464,13 +454,40 @@ class MainWindow(QMainWindow):
                 "Избери администратор за текущия месец\n"
                 "от меню „Служители“."
             )
-
             return
 
         try:
-            self.client.generate_month(self.current_year, self.current_month)
+            result = self.client.generate_month(
+                self.current_year,
+                self.current_month
+            )
         except Exception as e:
             error(self, "Грешка", str(e))
+            return
+
+        if isinstance(result, dict) and result.get("frozen"):
+            reason = result.get("reason")
+
+            if reason == "MIN_EMPLOYEES":
+                warning(
+                    self,
+                    "Недостатъчен брой служители",
+                    "Минимум 4 служители + администратор са нужни."
+                )
+            elif reason == "NO_ADMIN":
+                warning(
+                    self,
+                    "Липсва администратор",
+                    "Избери администратор за месеца."
+                )
+            else:
+                warning(
+                    self,
+                    "Генериране",
+                    "Месецът е създаден в ограничен режим."
+                )
+
+            self.load_month()
             return
 
         show_info(self, "Готово", "Месецът е генериран.")
