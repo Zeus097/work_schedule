@@ -12,10 +12,10 @@ from scheduler.logic.months_logic import load_month
 CYCLE = [
     "Д", "Д", "Д", "Д",
     "",
-    "В", "В", "В", "В",
-    "",
     "Н", "Н", "Н", "Н",
-    "", ""
+    "", "",
+    "В", "В", "В", "В",
+    ""
 ]
 CYCLE_LEN = len(CYCLE)
 

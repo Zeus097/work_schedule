@@ -18,6 +18,7 @@ datas = [
     (project_root / "scheduler", "scheduler"),
     (project_root / "desktop_app", "desktop_app"),
     (project_root / "data", "data"),
+    (project_root / "runtime_data", "runtime_data"),
 ]
 
 a = Analysis(
@@ -38,8 +39,16 @@ exe = EXE(
     a.datas,
     [],
     name="Kantar",
+    icon=str(project_root / "assets" / "kantar.icns"),
     debug=False,
     strip=False,
     upx=True,
     console=False,
+)
+
+app = BUNDLE(
+    exe,
+    name="Kantar.app",
+    icon=str(project_root / "assets" / "kantar.icns"),
+    bundle_identifier="com.kantar.schedule",
 )
