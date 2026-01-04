@@ -81,7 +81,7 @@ No IDE is required. The entire process is done using **Command Prompt** or **Pow
 #### 2️⃣ Create and activate virtual environment
 #### 3️⃣ Install dependencies
 #### 4️⃣ Clean previous builds
-5#### ️⃣ Build Windows executable
+#### 5️⃣Build Windows executable
 
 ### ✅ Notes
 - **The Windows build does not require PyCharm or any IDE.
