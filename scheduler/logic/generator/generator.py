@@ -81,10 +81,6 @@ def generate_new_month(
                 "day": day,
                 "missing": missing,
             })
-
-            # advance cycle even on missing coverage
-            for emp_id in workers:
-                cycle_pos[str(emp_id)] = (cycle_pos[str(emp_id)] + 1) % CYCLE_LEN
             continue
 
         # assign shifts
