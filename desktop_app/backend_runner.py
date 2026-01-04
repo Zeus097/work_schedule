@@ -10,33 +10,14 @@ class DjangoBackend:
         self.process = None
         self.base_url = "http://127.0.0.1:8000"
 
+
     def start(self):
-        if self.process:
-            return
-
-        project_root = self._project_root()
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "waitress",
-            "--listen=127.0.0.1:8000",
-            "weight_department_schedule.wsgi:application",
-        ]
-
-        self.process = subprocess.Popen(
-            cmd,
-            cwd=str(project_root),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-        self._wait_until_ready()
+        print("Django backend disabled (desktop mode)")
+        return
 
     def stop(self):
-        if self.process:
-            self.process.terminate()
-            self.process = None
+        return
+
 
     def _wait_until_ready(self, timeout=20):
         start = time.time()
@@ -50,6 +31,7 @@ class DjangoBackend:
             time.sleep(0.3)
 
         raise RuntimeError("Django backend did not start")
+
 
     def _project_root(self) -> Path:
         if getattr(sys, "frozen", False):

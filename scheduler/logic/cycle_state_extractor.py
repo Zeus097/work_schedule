@@ -1,36 +1,48 @@
 from typing import Dict
 from scheduler.logic.rules import to_lat, is_rest_like
 
-def extract_cycle_state_from_schedule(
-    schedule: Dict[str, Dict[str, str]],
-    last_day,
-    admin_id: str,
-) -> Dict[str, dict]:
 
+
+CYCLE = [
+    "Д", "Д", "Д", "Д",
+    "",
+    "Н", "Н", "Н", "Н",
+    "", "",
+    "В", "В", "В", "В",
+    ""
+]
+
+CYCLE_LEN = len(CYCLE)
+
+
+
+def extract_cycle_state_from_schedule(schedule, last_day, admin_id):
     state = {}
 
     for emp_id, days in schedule.items():
-        last_shift = None
+        if emp_id == admin_id:
+            continue
+
         last_work_day = None
+        last_shift = None
 
         for day_str in sorted(days.keys(), key=int):
-            shift = to_lat(days[day_str])
+            shift = days[day_str]
+            if shift in ("Д", "Н", "В"):
+                last_work_day = int(day_str)
+                last_shift = shift
 
-            if not shift or is_rest_like(shift):
-                continue
-
-            last_shift = shift
-            last_work_day = int(day_str)
-
-        if last_work_day is None:
-            state[emp_id] = {
-                "last_shift": None,
-                "days_since": 999,
-            }
+        if last_shift is None:
+            cycle_index = 0
         else:
-            state[emp_id] = {
-                "last_shift": last_shift,
-                "days_since": (last_day.day - last_work_day),
-            }
+            cycle_index = max(
+                i for i, s in enumerate(CYCLE) if s == last_shift
+            ) + 1
+
+        state[str(emp_id)] = {
+            "cycle_index": cycle_index % CYCLE_LEN
+        }
 
     return state
+
+

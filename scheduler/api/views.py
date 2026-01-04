@@ -599,18 +599,33 @@ class AcceptMonthAsStartAPI(APIView):
         last_day_num = calendar.monthrange(year, month)[1]
         last_day_date = date(year, month, last_day_num)
 
-        cycle_state = extract_cycle_state_from_schedule(
-            schedule=final_schedule,
-            last_day=last_day_date,
-            admin_id=str(admin_id),
-        )
+        from scheduler.logic.generator.generator import CYCLE, CYCLE_LEN
 
-        save_last_cycle_state(cycle_state, last_day_date)
+        state = {}
+
+        for emp_id, days in final_schedule.items():
+            if str(emp_id) == str(admin_id):
+                continue
+
+            last_shift = None
+            for day in sorted(days.keys(), key=int):
+                if days[day] in ("Д", "Н", "В"):
+                    last_shift = days[day]
+
+            if last_shift is None:
+                cycle_index = 0
+            else:
+                cycle_index = max(
+                    i for i, s in enumerate(CYCLE) if s == last_shift
+                ) + 1
+
+            state[str(emp_id)] = {
+                "cycle_index": cycle_index % CYCLE_LEN
+            }
+
+        save_last_cycle_state(state, last_day_date)
 
         return Response({"ok": True})
-
-
-
 
 
 class SetMonthAdminView(APIView):
