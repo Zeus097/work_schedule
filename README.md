@@ -62,33 +62,31 @@ stability, clarity, and long-term maintainability.
 ## 📦 Packaging (Production)
 
 The application is prepared for distribution as:
-- **Windows (.exe)**
 - **macOS (.app)**
 
-Using PyInstaller, with no Python installation required for end users.
+### 🪟 Windows Packaging (Terminal-only)
+- **Windows (.exe)**
 
----
+> ⚠️ **Important:** Windows packaging must be performed **on a Windows machine**.  
+> Cross-platform builds (macOS → Windows) are **not supported** by PyInstaller.
 
-## 🧪 Tests
+No IDE is required. The entire process is done using **Command Prompt** or **PowerShell**.
 
-Mostly the Generator of the shifts is covered.
-
-- **Test coverage includes:**
-- Missing administrator;
-- Insufficient employees;
-- Successful generation;
-- Daily shift coverage;
-- Administrator weekday-only rules;
-- Non-strict generation behavior.
-
----
-
-## ⚠️ Important Notes
-
+##### ⚠️ Important Notes
 - All data is stored locally (JSON files);
 - Each month is fully independent;
 - Manual edits are preserved;
 - Locked months are immutable except for export.
+#### 1️⃣ Clone the project
+#### 2️⃣ Create and activate virtual environment
+#### 3️⃣ Install dependencies
+#### 4️⃣ Clean previous builds
+5#### ️⃣ Build Windows executable
+
+### ✅ Notes
+- **The Windows build does not require PyCharm or any IDE.
+All packaging steps are executed via terminal.
+The .spec file defines included data files, resources, and runtime configuration.**
 
 ---
 
