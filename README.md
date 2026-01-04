@@ -62,7 +62,7 @@ stability, clarity, and long-term maintainability.
 ## 📦 Packaging (Production)
 
 The application is prepared for distribution as:
-- **macOS (.app)**
+- **macOS (.app)- currently!**
 
 ### 🪟 Windows Packaging (Terminal-only)
 - **Windows (.exe)**
@@ -76,18 +76,65 @@ No IDE is required. The entire process is done using **Command Prompt** or **Pow
 - All data is stored locally (JSON files);
 - Each month is fully independent;
 - Manual edits are preserved;
-- Locked months are immutable except for export.
+- Locked months are immutable except for export;
+- The application runs as a **portable executable** (no installation required).
+
+---
+
+#### 🔧 Prerequisites (Windows)
+Before starting, make sure the following are installed:
+- **Python 3.10+** (enable **“Add Python to PATH”** during installation)
+- **Git for Windows**
+
+A system restart after installation is recommended.
+
+---
+
 #### 1️⃣ Clone the project
+```bat
+git clone https://github.com/Zeus097/work_schedule.git
+cd <Repo dir>
+```
 #### 2️⃣ Create and activate virtual environment
+```bat
+py -m venv venv
+venv\Scripts\activate
+```
+
 #### 3️⃣ Install dependencies
+```bat
+py -m pip install --upgrade pip
+py -m pip install -r requirements.txt
+py -m pip install pyinstaller
+```
+
+
 #### 4️⃣ Clean previous builds
-#### 5️⃣Build Windows executable
+```bat
+if exist build rmdir /s /q build
+if exist dist rmdir /s /q dist
+```
 
-### ✅ Notes
-- **The Windows build does not require PyCharm or any IDE.
-All packaging steps are executed via terminal.
-The .spec file defines included data files, resources, and runtime configuration.**
+#### 5️⃣ Build Windows executable
+```bat
+py -m PyInstaller Kantar.spec
+```
 
+#### 📦 Output
+```bat
+dist\Kantar.exe
+```
+
+**The resulting file is a single, self-contained Windows executable and can be:**
+- copied directly to another computer,
+- placed on a USB drive,
+- executed without installation.
+
+#### ✅ **Notes**
+- The Windows build does not require PyCharm or any IDE.
+- All packaging steps are executed via terminal.
+- The .spec file defines included data files, resources, and runtime configuration.
+- No business logic changes are required for Windows packaging.
 ---
 
 ## 🤖 AI-Assisted Development
