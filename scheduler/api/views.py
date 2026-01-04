@@ -207,6 +207,13 @@ class GenerateMonthView(APIView):
                     strict=strict,
                 )
 
+                if "final_cycle_state" in generated:
+                    _, days_in_month = calendar.monthrange(year, month)
+                    save_last_cycle_state(
+                        generated["final_cycle_state"],
+                        date(year, month, days_in_month)
+                    )
+
                 generated["ui_locked"] = False
                 save_month(year, month, generated)
 
@@ -260,6 +267,13 @@ class GenerateMonthView(APIView):
                 "Възникна вътрешна грешка при генериране на графика.\n"
                 "Моля, опитайте отново или се свържете с администратора.",
                 http_status=409
+            )
+
+        if "final_cycle_state" in generated:
+            _, days_in_month = calendar.monthrange(year, month)
+            save_last_cycle_state(
+                generated["final_cycle_state"],
+                date(year, month, days_in_month)
             )
 
         generated["ui_locked"] = False
@@ -546,62 +560,6 @@ class ClearMonthScheduleAPI(APIView):
         data["ideal"] = {}
         save_month(year, month, data)
         return Response({"status": "ok"})
-
-
-class AcceptMonthAsStartAPI(APIView):
-    def post(self, request, year: int, month: int):
-        data = load_month(year, month)
-
-        if not data.get("schedule"):
-            return api_error(
-                code="EMPTY_MONTH",
-                message="Месецът няма график.",
-                http_status=400
-            )
-
-        admin_id = data.get("month_admin_id")
-        if not admin_id:
-            return api_error(
-                code="NO_ADMIN",
-                message="Няма избран администратор.",
-                http_status=400
-            )
-
-        final_schedule = apply_overrides(
-            data.get("schedule", {}),
-            data.get("overrides", {})
-        )
-
-        last_day_num = calendar.monthrange(year, month)[1]
-        last_day_date = date(year, month, last_day_num)
-
-        from scheduler.logic.generator.generator import CYCLE, CYCLE_LEN
-
-        state = {}
-
-        for emp_id, days in final_schedule.items():
-            if str(emp_id) == str(admin_id):
-                continue
-
-            last_shift = None
-            for day in sorted(days.keys(), key=int):
-                if days[day] in ("Д", "Н", "В"):
-                    last_shift = days[day]
-
-            if last_shift is None:
-                cycle_index = 0
-            else:
-                cycle_index = max(
-                    i for i, s in enumerate(CYCLE) if s == last_shift
-                ) + 1
-
-            state[str(emp_id)] = {
-                "cycle_index": cycle_index % CYCLE_LEN
-            }
-
-        save_last_cycle_state(state, last_day_date)
-
-        return Response({"ok": True})
 
 
 class SetMonthAdminView(APIView):

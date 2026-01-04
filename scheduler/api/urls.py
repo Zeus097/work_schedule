@@ -8,7 +8,6 @@ from scheduler.api.views import (
     LockMonthView,
     ClearScheduleAPI,
     ClearMonthScheduleAPI,
-    AcceptMonthAsStartAPI,
     SetMonthAdminView,
 )
 
@@ -25,7 +24,6 @@ urlpatterns = [
     path("schedule/<int:year>/<int:month>/lock/", LockMonthView.as_view(), name="api_lock_month"),
     path("schedule/<int:year>/<int:month>/clear/", ClearScheduleAPI.as_view(),),
     path("schedule/<int:year>/<int:month>/clear/", ClearMonthScheduleAPI.as_view(),),
-    path("schedule/<int:year>/<int:month>/accept-as-start/", AcceptMonthAsStartAPI.as_view(),),
     path("schedule/<int:year>/<int:month>/admin/", SetMonthAdminView.as_view(), name="api_set_month_admin"),
 
 ]

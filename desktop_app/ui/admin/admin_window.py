@@ -82,10 +82,6 @@ class AdminWindow(QWidget):
         self.lock_btn.clicked.connect(self.confirm_and_lock)
         layout.addWidget(self.lock_btn)
 
-        self.accept_btn = QPushButton("♻️ Приеми текущия месец като начало")
-        self.accept_btn.clicked.connect(self.accept_as_start)
-        layout.addWidget(self.accept_btn)
-
 
     def load_data(self):
         if not self.main_window.current_schedule:
@@ -140,6 +136,7 @@ class AdminWindow(QWidget):
                 item = self.table.item(row, 1)
                 return str(item.data(Qt.ItemDataRole.UserRole))
         return None
+
 
     def confirm_and_lock(self):
         if self.table.rowCount() == 0:

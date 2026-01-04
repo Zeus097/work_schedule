@@ -81,6 +81,9 @@ def generate_new_month(
                 "day": day,
                 "missing": missing,
             })
+
+            for emp_id in workers:
+                cycle_pos[str(emp_id)] = (cycle_pos[str(emp_id)] + 1) % CYCLE_LEN
             continue
 
         # assign shifts
@@ -104,6 +107,13 @@ def generate_new_month(
         date(year, month, days_in_month)
     )
 
+    final_cycle_state = {}
+
+    for emp_id in workers:
+        final_cycle_state[str(emp_id)] = {
+            "cycle_index": cycle_pos[str(emp_id)]
+        }
+
     return {
         "year": year,
         "month": month,
@@ -112,4 +122,6 @@ def generate_new_month(
         "warnings": warnings,
         "generator_locked": False,
         "month_admin_id": admin_id,
+        "final_cycle_state": final_cycle_state,
     }
+

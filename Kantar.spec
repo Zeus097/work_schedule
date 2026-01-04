@@ -18,7 +18,7 @@ datas = [
     (project_root / "scheduler", "scheduler"),
     (project_root / "desktop_app", "desktop_app"),
     (project_root / "data", "data"),
-    (project_root / "runtime_data", "runtime_data"),
+    (project_root / "docs", "docs"),
 ]
 
 a = Analysis(

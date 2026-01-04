@@ -21,6 +21,7 @@ class APIClient:
         r.raise_for_status()
         return r.json()
 
+
     def get_month_info(self, year: int, month: int):
         r = requests.get(f"{self.base}/meta/month-info/{year}/{month}/")
         r.raise_for_status()
@@ -43,6 +44,7 @@ class APIClient:
         }
         data["schedule"] = normalized_schedule
         return data
+
 
     def generate_month(self, year: int, month: int, strict: bool = True):
         url = f"{self.base}/schedule/generate/"
@@ -76,6 +78,7 @@ class APIClient:
 
         raise RuntimeError(message)
 
+
     def post_override(self, year, month, data):
         r = requests.post(
             f"{self.base}/schedule/{year}/{month}/override/",
@@ -93,10 +96,12 @@ class APIClient:
 
         return r.json()
 
+
     def get_employees(self):
         r = requests.get(f"{self.base}/employees/")
         r.raise_for_status()
         return r.json()
+
 
     def create_employee(self, data: dict):
         """Основният метод – използва се от UI"""
@@ -104,19 +109,23 @@ class APIClient:
         r.raise_for_status()
         return r.json()
 
+
     def add_employee(self, data: dict):
         """Alias за backward compatibility"""
         return self.create_employee(data)
+
 
     def update_employee(self, emp_id: int, data: dict):
         r = requests.put(f"{self.base}/employees/{emp_id}/", json=data)
         r.raise_for_status()
         return r.json()
 
+
     def delete_employee(self, emp_id: int):
         r = requests.delete(f"{self.base}/employees/{emp_id}/")
         r.raise_for_status()
         return True
+
 
     def lock_month(self, year: int, month: int, last_shifts: dict | None = None):
         url = f"{self.base}/schedule/{year}/{month}/lock/"
@@ -151,15 +160,18 @@ class APIClient:
             **r.json()
         }
 
+
     def _force_create_month(self, payload: dict):
         url = f"{self.base}/internal/bootstrap-month/"
         r = requests.post(url, json=payload)
         r.raise_for_status()
 
+
     def clear_schedule(self, year: int, month: int):
         r = requests.post(f"{self.base}/schedule/{year}/{month}/clear/")
         r.raise_for_status()
         return r.json()
+
 
     def clear_month(self, year: int, month: int):
         url = f"{self.base}/schedule/{year}/{month}/clear/"
@@ -167,17 +179,13 @@ class APIClient:
         r.raise_for_status()
         return r.json()
 
-    def accept_month_as_start(self, year: int, month: int):
-        url = f"{self.base}/schedule/{year}/{month}/accept-as-start/"
-        r = requests.post(url)
-        r.raise_for_status()
-        return r.json()
 
     def set_month_admin(self, year: int, month: int, employee_id: int):
         url = f"{self.base}/schedule/{year}/{month}/admin/"
         r = requests.post(url, json={"employee_id": employee_id})
         r.raise_for_status()
         return r.json()
+
 
     def get_month_admin(self, year: int, month: int):
         try:
